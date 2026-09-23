@@ -1,0 +1,60 @@
+"""Application entry point.
+
+Phase 1: bootstrap config + logging and run the lifecycle machinery. The Qt
+UI, workers, and providers register lifecycle steps in their phases; this
+function stays a thin, stable wrapper.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from app.config.constants import APP_VERSION
+from app.core.container import bootstrap_container
+from app.core.lifecycle import Lifecycle, LifecycleContext
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="employee-monitoring-agent",
+        description="Employee monitoring desktop agent (client-side).",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"employee-monitoring-agent {APP_VERSION}",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    build_parser().parse_args(argv)
+
+    container = bootstrap_container()
+    logger = container.logger
+
+    lifecycle = Lifecycle(LifecycleContext())
+
+    def _ready(context: LifecycleContext) -> None:  # noqa: ARG001
+        # Phase 4+ replaces this with UI/dashboard startup.
+        logger.info(
+            "Bootstrap complete. Data dir: %s (mode=%s)",
+            container.storage_root(),
+            container.mode,
+        )
+
+    lifecycle.add("core", start=_ready, shutdown=None)
+
+    lifecycle.start()
+    try:
+        # Future phases: run Qt event loop here; lifecycle.shutdown() runs
+        # on clean exit.
+        pass
+    finally:
+        lifecycle.shutdown()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
