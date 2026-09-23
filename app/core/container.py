@@ -5,16 +5,21 @@ The single place concrete implementations are wired to interfaces
 Business logic and UI never import a concrete provider directly — they
 receive one from here, selected by a single ``mode: "local" | "api"`` flag.
 
-Phase 1 only wires bootstrap concerns (settings, logging, paths). Providers
-and repositories register here as their phases land.
+Phase 1 wired bootstrap concerns (settings, logging, paths). Phase 2 adds
+the :class:`Database` handle and its session creation; repositories and
+domain services register here as their phases land.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from app.config.constants import DATABASE_DIR, DB_FILENAME
 from app.config.settings import AppSettings, LocalConfig, ServerPolicy
 from app.core.logging import get_logger, setup_logging
+from app.infrastructure.database.db import Database
+from app.infrastructure.database.migrations import migrate
 
 if TYPE_CHECKING:
     import logging
@@ -27,8 +32,19 @@ class Container:
         self.settings = settings
         self.logger: logging.Logger = get_logger("core")
 
-        # Phase 2+: sqlalchemy engine, repositories, domain services,
-        # workers — registered here, never imported by callers.
+        self.database: Database = Database(
+            Path(settings.subdir(DATABASE_DIR)) / DB_FILENAME
+        )
+        # Phase 3+: repositories, domain services, workers — registered
+        # here, never imported by callers.
+
+    def open_database(self) -> None:
+        """Migrate the schema to the current version at startup."""
+        version = migrate(self.database.engine)
+        self.logger.info("database ready (schema v%s)", version)
+
+    def close_database(self) -> None:
+        self.database.dispose()
 
     @property
     def mode(self) -> str:
@@ -47,7 +63,8 @@ def bootstrap_container(
     """Build a fully wired container.
 
     Order matters and mirrors docs/ARCHITECTURE.md § Application lifecycle:
-    load config → init logging → (db/workers in later phases).
+    load config → init logging → (open db at lifecycle start, later phases:
+    services, workers).
     """
     settings = AppSettings(local=local, server=server)
 

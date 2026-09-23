@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 import pytest
 from app.config.settings import AppSettings, LocalConfig, ServerPolicy
 from app.core.container import Container, bootstrap_container
+from app.infrastructure.database.db import Database
+from app.infrastructure.database.migrations import migrate
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -45,3 +47,12 @@ def app_settings(local_settings: LocalConfig) -> AppSettings:
 def live_container(local_settings: LocalConfig) -> Container:
     """A container wired to a temp log directory (no console output)."""
     return bootstrap_container(local=local_settings, console_logging=False)
+
+
+@pytest.fixture
+def database(tmp_path: Path) -> Database:
+    """A migrated, isolated in-memory database per test."""
+    db = Database(db_path=tmp_path / "test-agent.db")
+    migrate(db.engine)
+    yield db
+    db.dispose()

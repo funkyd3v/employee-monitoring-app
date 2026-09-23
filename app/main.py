@@ -36,6 +36,14 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle = Lifecycle(LifecycleContext())
 
+    # Database lifecycle: migrate at start, dispose on shutdown
+    # (docs/ARCHITECTURE.md § Application lifecycle).
+    lifecycle.add(
+        "database",
+        start=lambda _ctx: container.open_database(),
+        shutdown=lambda _ctx: container.close_database(),
+    )
+
     def _ready(context: LifecycleContext) -> None:  # noqa: ARG001
         # Phase 4+ replaces this with UI/dashboard startup.
         logger.info(
