@@ -18,8 +18,12 @@ from typing import TYPE_CHECKING
 from app.config.constants import DATABASE_DIR, DB_FILENAME
 from app.config.settings import AppSettings, LocalConfig, ServerPolicy
 from app.core.logging import get_logger, setup_logging
+from app.domain.auth.auth import DummyAuthConfig, LocalDummyAuthProvider
+from app.domain.sessions.state_machine import SessionMachine
 from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
+from app.infrastructure.security.credential_store import build_credential_store
+from app.services.auth_service import AuthService
 
 if TYPE_CHECKING:
     import logging
@@ -35,8 +39,28 @@ class Container:
         self.database: Database = Database(
             Path(settings.subdir(DATABASE_DIR)) / DB_FILENAME
         )
-        # Phase 3+: repositories, domain services, workers — registered
-        # here, never imported by callers.
+
+        # The single app-level state machine. Auth drives LOGIN/LOGOUT now;
+        # the session engine drives CHECK_IN/… in Phase 5 — same instance.
+        self.session_machine = SessionMachine()
+
+        # Phase 3 authentication. The provider/credential-store selection is
+        # mode-aware (dummy provider now; a future ApiAuthProvider slots in
+        # without touching the service).
+        self.credential_store = build_credential_store(settings, keyring_api=None)
+        self.auth_service = AuthService(
+            auth_provider=LocalDummyAuthProvider(
+                DummyAuthConfig(
+                    email=settings.local.dummy_email,
+                    password=settings.local.dummy_password,
+                )
+            ),
+            credential_store=self.credential_store,
+            session_factory=self.database.session,
+            machine=self.session_machine,
+        )
+        # Phase 4+: repositories, workers — registered here, never imported
+        # by callers.
 
     def open_database(self) -> None:
         """Migrate the schema to the current version at startup."""

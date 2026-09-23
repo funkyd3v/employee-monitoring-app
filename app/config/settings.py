@@ -68,6 +68,12 @@ class LocalConfig(BaseSettings):
 
     data_dir: Path = Field(default_factory=default_data_dir)
 
+    # Where the auth token lives (docs/SECURITY_PRIVACY.md). Production is
+    # "auto": the OS keyring when available, otherwise non-persistent memory
+    # (never plaintext on disk). "dev-file" is an explicit opt-in for
+    # development machines with no keyring backend.
+    credential_backend: Literal["auto", "keyring", "dev-file", "none"] = "auto"
+
     # Dev-only dummy authentication (Phase 3). Must never be a default in
     # production code paths.
     dummy_email: str = "employee@example.com"

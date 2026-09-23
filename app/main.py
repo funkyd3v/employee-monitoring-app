@@ -44,6 +44,21 @@ def main(argv: list[str] | None = None) -> int:
         shutdown=lambda _ctx: container.close_database(),
     )
 
+    # Authentication restore: after the DB is ready, before the UI.
+    # A saved session puts the app straight into READY; otherwise LOGGED_OUT.
+    def _restore_auth(_ctx: LifecycleContext) -> None:
+        user = container.auth_service.restore()
+        if user is None:
+            logger.info("No saved session — awaiting login.")
+        else:
+            logger.info("Authentication restored for %s", user.email)
+        lifecycle.context.set("auth_user", user)
+
+    def _close_auth(_ctx: LifecycleContext) -> None:
+        container.auth_service.shutdown()
+
+    lifecycle.add("auth", start=_restore_auth, shutdown=_close_auth)
+
     def _ready(context: LifecycleContext) -> None:  # noqa: ARG001
         # Phase 4+ replaces this with UI/dashboard startup.
         logger.info(

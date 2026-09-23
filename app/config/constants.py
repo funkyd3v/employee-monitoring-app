@@ -21,6 +21,10 @@ LOG_FILENAME = "agent.log"
 CACHE_DIR = "cache"
 CONFIG_DIR = "config"
 
+# Dev-only token file name (explicit "dev-file" credential backend only —
+# never a default; production uses the OS keyring, docs/SECURITY_PRIVACY.md).
+AUTH_TOKEN_FILENAME = "auth.token"  # noqa: S105 -- filename, not a credential
+
 # Logging rotation: 5 MiB per file, 5 backups (docs/SECURITY_PRIVACY.md).
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_BACKUP_COUNT = 5
