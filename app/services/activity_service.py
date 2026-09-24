@@ -22,7 +22,11 @@ from typing import TYPE_CHECKING
 from app.core.clock import SYSTEM_CLOCK, Clock
 from app.core.logging import get_logger
 from app.domain.activity.activity import ActivityState
-from app.infrastructure.database.repositories import ActivityRepository
+from app.domain.sync.sync import SyncEntityType, SyncOperation
+from app.infrastructure.database.repositories import (
+    ActivityRepository,
+    SyncQueueRepository,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -109,17 +113,19 @@ class ActivityService:
                     existing = repo.list_for_session(session_id)
                     if existing:
                         # Session was paused and resumed — start a fresh ACTIVE
-                        repo.append(
+                        row = repo.append(
                             session_id=session_id,
                             state=ActivityState.ACTIVE,
                             started_at=at,
                         )
+                        self._enqueue_period(db, row.id, SyncOperation.CREATE.value)
                     else:
-                        repo.append(
+                        row = repo.append(
                             session_id=session_id,
                             state=ActivityState.ACTIVE,
                             started_at=at,
                         )
+                        self._enqueue_period(db, row.id, SyncOperation.CREATE.value)
                     db.commit()
                     self._logger.info("activity tracking started session=%s at=%s", session_id, at)
             except Exception as exc:
@@ -155,12 +161,15 @@ class ActivityService:
                     # Defensive: close any stray open (should already be closed by pause)
                     open_row = repo.open_for_session(self._session_id)
                     if open_row is not None:
-                        repo.close_open_for_session(self._session_id, ended_at=at)
-                    repo.append(
+                        closed = repo.close_open_for_session(self._session_id, ended_at=at)
+                        if closed is not None:
+                            self._enqueue_period(db, closed.id, SyncOperation.UPDATE.value)
+                    row = repo.append(
                         session_id=self._session_id,
                         state=ActivityState.ACTIVE,
                         started_at=at,
                     )
+                    self._enqueue_period(db, row.id, SyncOperation.CREATE.value)
                     db.commit()
                     self._logger.info("activity tracking resumed at=%s", at)
             except Exception as exc:
@@ -251,22 +260,26 @@ class ActivityService:
                     open_row = repo.open_for_session(self._session_id)
                     if open_row is None:
                         # No open period — create ACTIVE (should not happen normally)
-                        repo.append(
+                        row = repo.append(
                             session_id=self._session_id,
                             state=ActivityState.ACTIVE,
                             started_at=at,
                         )
+                        self._enqueue_period(db, row.id, SyncOperation.CREATE.value)
                         db.commit()
                         return ActivityState.ACTIVE
 
                     if open_row.state == ActivityState.IDLE.value:
                         # Waking from idle: close IDLE at `at`, open ACTIVE
-                        repo.close_open_for_session(self._session_id, ended_at=at)
-                        repo.append(
+                        closed = repo.close_open_for_session(self._session_id, ended_at=at)
+                        if closed is not None:
+                            self._enqueue_period(db, closed.id, SyncOperation.UPDATE.value)
+                        row = repo.append(
                             session_id=self._session_id,
                             state=ActivityState.ACTIVE,
                             started_at=at,
                         )
+                        self._enqueue_period(db, row.id, SyncOperation.CREATE.value)
                         db.commit()
                         self._logger.info("activity resumed ACTIVE at=%s", at)
                         return ActivityState.ACTIVE
@@ -275,18 +288,22 @@ class ActivityService:
                     if previous is not None and at - previous >= self._idle_threshold:
                         # Missed idle transition — synthesize it
                         idle_start = previous + self._idle_threshold
-                        repo.close_open_for_session(self._session_id, ended_at=idle_start)
-                        repo.append(
+                        closed = repo.close_open_for_session(self._session_id, ended_at=idle_start)
+                        if closed is not None:
+                            self._enqueue_period(db, closed.id, SyncOperation.UPDATE.value)
+                        r1 = repo.append(
                             session_id=self._session_id,
                             state=ActivityState.IDLE,
                             started_at=idle_start,
                             ended_at=at,
                         )
-                        repo.append(
+                        self._enqueue_period(db, r1.id, SyncOperation.CREATE.value)
+                        r2 = repo.append(
                             session_id=self._session_id,
                             state=ActivityState.ACTIVE,
                             started_at=at,
                         )
+                        self._enqueue_period(db, r2.id, SyncOperation.CREATE.value)
                         db.commit()
                         return ActivityState.ACTIVE
 
@@ -414,12 +431,15 @@ class ActivityService:
                     return None
                 # ACTIVE → IDLE at last_activity + threshold
                 idle_start = self._last_activity_at + self._idle_threshold
-                repo.close_open_for_session(self._session_id, ended_at=idle_start)
-                repo.append(
+                closed = repo.close_open_for_session(self._session_id, ended_at=idle_start)
+                if closed is not None:
+                    self._enqueue_period(db, closed.id, SyncOperation.UPDATE.value)
+                row = repo.append(
                     session_id=self._session_id,
                     state=ActivityState.IDLE,
                     started_at=idle_start,
                 )
+                self._enqueue_period(db, row.id, SyncOperation.CREATE.value)
                 db.commit()
                 self._logger.info("idle detected at=%s threshold=%s", at, self._idle_threshold)
                 return ActivityState.IDLE
@@ -433,10 +453,23 @@ class ActivityService:
         try:
             with self._session_factory() as db:
                 repo = ActivityRepository(db)
-                repo.close_open_for_session(session_id, ended_at=at)
+                closed = repo.close_open_for_session(session_id, ended_at=at)
+                if closed is not None:
+                    self._enqueue_period(db, closed.id, SyncOperation.UPDATE.value)
                 db.commit()
         except Exception as exc:
             self._logger.error("failed to close open period: %s", exc, exc_info=True)
+
+    def _enqueue_period(self, db, period_id: int, operation: str) -> None:  # type: ignore[no-untyped-def]
+        try:
+            q_repo = SyncQueueRepository(db)
+            q_repo.enqueue(
+                entity_type=SyncEntityType.ACTIVITY_PERIOD.value,
+                entity_id=period_id,
+                operation=operation,
+            )
+        except Exception:
+            self._logger.debug("failed to enqueue activity_period %s", period_id, exc_info=True)
 
     @staticmethod
     def _ensure_tz(at: datetime) -> None:

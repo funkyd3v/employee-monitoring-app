@@ -245,6 +245,89 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle.add("screenshots", start=_start_screenshots, shutdown=_stop_screenshots)
 
+    # Sync worker — offline queue drain with backoff, confirm-then-delete.
+    sync_supervisor: object | None = None
+
+    def _recover_sync(_ctx: LifecycleContext) -> None:
+        try:
+            result = container.sync_service.recover_stale()
+            if result["queue_reset"] or result["screenshots_reset"]:
+                logger.info("Sync stale recovery: %s", result)
+            else:
+                logger.debug("Sync stale recovery: no stale rows")
+        except Exception as exc:
+            logger.error("sync stale recovery failed: %s", exc, exc_info=True)
+
+    def _start_sync(_ctx: LifecycleContext) -> None:
+        nonlocal sync_supervisor
+        _recover_sync(_ctx)
+        try:
+            from app.workers.sync_worker import SyncWorkerSupervisor
+
+            supervisor = SyncWorkerSupervisor(
+                container.sync_service,
+                poll_interval_ms=30000,
+            )
+            sync_supervisor = supervisor
+            supervisor.start()
+            lifecycle.context.set("sync_supervisor", supervisor)
+            logger.info("Sync worker started")
+        except Exception as exc:
+            logger.error("failed to start sync worker: %s", exc, exc_info=True)
+
+    def _stop_sync(_ctx: LifecycleContext) -> None:
+        nonlocal sync_supervisor
+        sup = lifecycle.context.get("sync_supervisor")
+        if sup is not None:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                sup.stop()  # type: ignore[attr-defined]
+        if sync_supervisor is not None:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                sync_supervisor.stop()  # type: ignore[attr-defined]
+            sync_supervisor = None
+
+    lifecycle.add("sync", start=_start_sync, shutdown=_stop_sync)
+
+    # Cleanup worker — post-sync deletion with retention.
+    cleanup_supervisor: object | None = None
+
+    def _start_cleanup(_ctx: LifecycleContext) -> None:
+        nonlocal cleanup_supervisor
+        try:
+            from app.workers.cleanup_worker import CleanupWorkerSupervisor
+
+            supervisor = CleanupWorkerSupervisor(
+                container.cleanup_service,
+                poll_interval_ms=300000,
+            )
+            cleanup_supervisor = supervisor
+            supervisor.start()
+            lifecycle.context.set("cleanup_supervisor", supervisor)
+            logger.info("Cleanup worker started")
+        except Exception as exc:
+            logger.error("failed to start cleanup worker: %s", exc, exc_info=True)
+
+    def _stop_cleanup(_ctx: LifecycleContext) -> None:
+        nonlocal cleanup_supervisor
+        sup = lifecycle.context.get("cleanup_supervisor")
+        if sup is not None:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                sup.stop()  # type: ignore[attr-defined]
+        if cleanup_supervisor is not None:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                cleanup_supervisor.stop()  # type: ignore[attr-defined]
+            cleanup_supervisor = None
+
+    lifecycle.add("cleanup", start=_start_cleanup, shutdown=_stop_cleanup)
+
     ui = ui_controller.UiController(container, app)
 
     def _start_ui(_ctx: LifecycleContext) -> None:

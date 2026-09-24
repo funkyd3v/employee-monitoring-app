@@ -26,13 +26,16 @@ from app.infrastructure.database.migrations import migrate
 from app.infrastructure.security.credential_store import build_credential_store
 from app.services.activity_service import ActivityService
 from app.services.auth_service import AuthService
+from app.services.cleanup_service import CleanupService
 from app.services.screenshot_service import ScreenshotService
 from app.services.session_service import SessionService
+from app.services.sync_service import SyncService
 
 if TYPE_CHECKING:
     import logging
 
     from app.domain.screenshots.provider import ScreenshotProvider
+    from app.domain.sync.provider import SyncProvider
 
 
 class Container:
@@ -92,6 +95,17 @@ class Container:
         )
         self.session_service.set_screenshot_service(self.screenshot_service)
 
+        # Phase 8 offline queue & recovery — sync and cleanup.
+        self.sync_provider: SyncProvider = self._build_sync_provider()
+        self.sync_service = SyncService(
+            provider=self.sync_provider,
+            session_factory=self.database.session,
+        )
+        self.cleanup_service = CleanupService(
+            session_factory=self.database.session,
+            data_dir=self.settings.data_dir,
+        )
+
     def open_database(self) -> None:
         """Migrate the schema to the current version at startup."""
         version = migrate(self.database.engine)
@@ -109,6 +123,9 @@ class Container:
         self.activity_service.set_session_factory(self.database.session)
         self.screenshot_service.set_session_factory(self.database.session)
         self.screenshot_service.set_data_dir(self.settings.data_dir)
+        self.sync_service.set_session_factory(self.database.session)
+        self.cleanup_service.set_session_factory(self.database.session)
+        self.cleanup_service.set_data_dir(self.settings.data_dir)
         # keep old dual-arg shim working for any external callers
         with contextlib.suppress(Exception):
             self.session_service.set_persistence(session_factory=self.database.session)
@@ -148,6 +165,19 @@ class Container:
         )
 
         return DummyScreenshotProvider()
+
+    def _build_sync_provider(self) -> SyncProvider:
+        """Select sync provider by mode (dummy today, API tomorrow)."""
+        if self.settings.mode == "api":
+            try:
+                from app.infrastructure.network.sync_adapter import ApiSyncProvider
+
+                return ApiSyncProvider(base_url="")
+            except Exception:  # noqa: S110
+                pass
+        from app.infrastructure.network.sync_adapter import DummySyncProvider
+
+        return DummySyncProvider()
 
     def close_database(self) -> None:
         self.database.dispose()

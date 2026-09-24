@@ -177,7 +177,11 @@ class SessionService:
             return
         try:
             with self._session_factory() as db:
-                from app.infrastructure.database.repositories import SessionRepository
+                from app.domain.sync.sync import SyncEntityType, SyncOperation
+                from app.infrastructure.database.repositories import (
+                    SessionRepository,
+                    SyncQueueRepository,
+                )
 
                 repo = SessionRepository(db)
                 # If this session already has an ORM id, it was restored — skip create.
@@ -187,6 +191,13 @@ class SessionService:
                         db.commit()
                         return
                 row = repo.create(user_id=session.user_id, started_at=at)
+                # Enqueue for future sync (offline queue, docs/DATA_MODEL.md)
+                q_repo = SyncQueueRepository(db)
+                q_repo.enqueue(
+                    entity_type=SyncEntityType.WORK_SESSION.value,
+                    entity_id=row.id,
+                    operation=SyncOperation.CREATE.value,
+                )
                 db.commit()
                 # sync ORM id back to domain
                 session.id = row.id
@@ -203,28 +214,37 @@ class SessionService:
         try:
             with self._session_factory() as db:
                 from app.domain.sessions.session import WorkSessionStatus
+                from app.domain.sync.sync import SyncEntityType, SyncOperation
                 from app.infrastructure.database.repositories import (
                     BreakRepository,
                     SessionRepository,
+                    SyncQueueRepository,
                 )
 
                 s_repo = SessionRepository(db)
                 b_repo = BreakRepository(db)
+                q_repo = SyncQueueRepository(db)
                 s_repo.update_status(session.id, WorkSessionStatus.BREAK)
-                b_repo.start(session_id=session.id, started_at=at)
+                br = b_repo.start(session_id=session.id, started_at=at)
+                q_repo.enqueue(
+                    entity_type=SyncEntityType.WORK_SESSION.value,
+                    entity_id=session.id,
+                    operation=SyncOperation.UPDATE.value,
+                )
+                q_repo.enqueue(
+                    entity_type=SyncEntityType.BREAK.value,
+                    entity_id=br.id,
+                    operation=SyncOperation.CREATE.value,
+                )
                 db.commit()
                 # assign id to last break if missing
                 try:
-                    rows = b_repo.list_for_session(session.id)
-                    for br in rows:
-                        if br.started_at == at and br.ended_at is None:
-                            if session.breaks:
-                                last = session.breaks[-1]
-                                if last.id is None:
-                                    from dataclasses import replace
+                    if session.breaks:
+                        last = session.breaks[-1]
+                        if last.id is None:
+                            from dataclasses import replace
 
-                                    session.breaks[-1] = replace(last, id=br.id)
-                            break
+                            session.breaks[-1] = replace(last, id=br.id)
                 except Exception:
                     self._logger.debug("break id sync skipped", exc_info=True)
                 self._logger.info("persisted take_break id=%s at=%s", session.id, at)
@@ -240,17 +260,30 @@ class SessionService:
         try:
             with self._session_factory() as db:
                 from app.domain.sessions.session import WorkSessionStatus
+                from app.domain.sync.sync import SyncEntityType, SyncOperation
                 from app.infrastructure.database.repositories import (
                     BreakRepository,
                     SessionRepository,
+                    SyncQueueRepository,
                 )
 
                 s_repo = SessionRepository(db)
                 b_repo = BreakRepository(db)
+                q_repo = SyncQueueRepository(db)
                 open_brk = b_repo.open_for_session(session.id)
                 if open_brk is not None:
                     b_repo.end_open(open_brk.id, ended_at=at)
+                    q_repo.enqueue(
+                        entity_type=SyncEntityType.BREAK.value,
+                        entity_id=open_brk.id,
+                        operation=SyncOperation.UPDATE.value,
+                    )
                 s_repo.update_status(session.id, WorkSessionStatus.WORKING)
+                q_repo.enqueue(
+                    entity_type=SyncEntityType.WORK_SESSION.value,
+                    entity_id=session.id,
+                    operation=SyncOperation.UPDATE.value,
+                )
                 db.commit()
                 self._logger.info("persisted resume id=%s at=%s", session.id, at)
         except Exception as exc:
@@ -265,19 +298,32 @@ class SessionService:
         # If a break is still open (checkout from BREAK), close it first
         try:
             with self._session_factory() as db:
+                from app.domain.sync.sync import SyncEntityType, SyncOperation
                 from app.infrastructure.database.repositories import (
                     BreakRepository,
                     SessionRepository,
+                    SyncQueueRepository,
                 )
 
                 b_repo = BreakRepository(db)
                 s_repo = SessionRepository(db)
+                q_repo = SyncQueueRepository(db)
                 open_brk = b_repo.open_for_session(session.id)
                 if open_brk is not None:
                     b_repo.end_open(open_brk.id, ended_at=at)
+                    q_repo.enqueue(
+                        entity_type=SyncEntityType.BREAK.value,
+                        entity_id=open_brk.id,
+                        operation=SyncOperation.UPDATE.value,
+                    )
                 # total_work_seconds already computed by domain checkout()
                 total = session.total_work_seconds
                 s_repo.checkout(session.id, ended_at=at, total_work_seconds=total)
+                q_repo.enqueue(
+                    entity_type=SyncEntityType.WORK_SESSION.value,
+                    entity_id=session.id,
+                    operation=SyncOperation.UPDATE.value,
+                )
                 db.commit()
                 self._logger.info(
                     "persisted checkout session_id=%s total=%s", session.id, total
