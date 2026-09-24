@@ -22,7 +22,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.constants import (
     APP_NAME_SHORT,
+    DEFAULT_CLEANUP_POLL_SECONDS,
     DEFAULT_IDLE_THRESHOLD_SECONDS,
+    DEFAULT_RETENTION_DAYS,
+    DEFAULT_RETENTION_MEGABYTES,
+    DEFAULT_SYNC_BATCH_LIMIT,
+    DEFAULT_SYNC_POLL_SECONDS,
     MIN_SCREENSHOT_INTERVAL_SECONDS,
 )
 
@@ -97,7 +102,11 @@ class ServerPolicy(BaseModel):
 
     screenshot_interval_seconds: int = MIN_SCREENSHOT_INTERVAL_SECONDS
     idle_threshold_seconds: int = DEFAULT_IDLE_THRESHOLD_SECONDS
-    local_retention_megabytes: int = 512
+    local_retention_megabytes: int = DEFAULT_RETENTION_MEGABYTES
+    sync_poll_seconds: int = DEFAULT_SYNC_POLL_SECONDS
+    cleanup_poll_seconds: int = DEFAULT_CLEANUP_POLL_SECONDS
+    sync_batch_limit: int = DEFAULT_SYNC_BATCH_LIMIT
+    retention_days: int = DEFAULT_RETENTION_DAYS
 
     @field_validator("screenshot_interval_seconds")
     @classmethod
@@ -107,6 +116,20 @@ class ServerPolicy(BaseModel):
                 "screenshot interval must be at least "
                 f"{MIN_SCREENSHOT_INTERVAL_SECONDS} seconds"
             )
+        return value
+
+    @field_validator("sync_poll_seconds", "cleanup_poll_seconds", "retention_days")
+    @classmethod
+    def _enforce_non_negative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("value must be >= 0")
+        return value
+
+    @field_validator("sync_batch_limit")
+    @classmethod
+    def _enforce_batch_limit(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("sync_batch_limit must be >= 1")
         return value
 
 
@@ -131,6 +154,22 @@ class AppSettings:
     @property
     def idle_threshold_seconds(self) -> int:
         return self.server.idle_threshold_seconds
+
+    @property
+    def sync_poll_seconds(self) -> int:
+        return self.server.sync_poll_seconds
+
+    @property
+    def cleanup_poll_seconds(self) -> int:
+        return self.server.cleanup_poll_seconds
+
+    @property
+    def sync_batch_limit(self) -> int:
+        return self.server.sync_batch_limit
+
+    @property
+    def retention_days(self) -> int:
+        return self.server.retention_days
 
     @property
     def mode(self) -> RuntimeMode:

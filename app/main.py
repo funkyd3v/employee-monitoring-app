@@ -274,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
 
             supervisor = SyncWorkerSupervisor(
                 container.sync_service,
-                poll_interval_ms=30000,
+                poll_interval_ms=container.settings.sync_poll_seconds * 1000,
             )
             sync_supervisor = supervisor
             supervisor.start()
@@ -310,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
 
             supervisor = CleanupWorkerSupervisor(
                 container.cleanup_service,
-                poll_interval_ms=300000,
+                poll_interval_ms=container.settings.cleanup_poll_seconds * 1000,
             )
             cleanup_supervisor = supervisor
             supervisor.start()

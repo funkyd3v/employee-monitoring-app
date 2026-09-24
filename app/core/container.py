@@ -100,10 +100,12 @@ class Container:
         self.sync_service = SyncService(
             provider=self.sync_provider,
             session_factory=self.database.session,
+            batch_limit=self.settings.sync_batch_limit,
         )
         self.cleanup_service = CleanupService(
             session_factory=self.database.session,
             data_dir=self.settings.data_dir,
+            retention_days=self.settings.retention_days,
         )
 
     def open_database(self) -> None:
