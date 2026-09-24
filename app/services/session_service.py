@@ -84,6 +84,7 @@ class SessionService:
         # Back-compat: some callers still pass repo directly (tests)
         self._session_repository: SessionRepository | None = None
         self._activity_service: Any | None = None
+        self._screenshot_service: Any | None = None
 
     # Back-compat shim for old wiring (container used repo+factory). Keep it
     # so existing tests don't break if they call set_persistence(repo,factory).
@@ -111,6 +112,10 @@ class SessionService:
         """Bind the activity engine (Phase 6) — keeps tick() real."""
         self._activity_service = service
 
+    def set_screenshot_service(self, service: Any | None) -> None:
+        """Bind the screenshot engine (Phase 7)."""
+        self._screenshot_service = service
+
     def set_user(self, user_id: int | None) -> None:
         """Bind the authenticated user (controllers set this post-login)."""
         self._user_id = user_id
@@ -135,6 +140,7 @@ class SessionService:
         self._machine.apply(SessionAction.CHECK_IN, at=at, user_id=self._user_id)
         self._persist_check_in(at)
         self._activity_start(at)
+        self._screenshot_start(at)
         return self.tick()
 
     def take_break(self) -> SessionView:
@@ -142,6 +148,7 @@ class SessionService:
         self._machine.apply(SessionAction.TAKE_BREAK, at=at)
         self._persist_take_break(at)
         self._activity_pause(at)
+        self._screenshot_pause()
         return self.tick()
 
     def resume(self) -> SessionView:
@@ -149,12 +156,14 @@ class SessionService:
         self._machine.apply(SessionAction.RESUME, at=at)
         self._persist_resume(at)
         self._activity_resume(at)
+        self._screenshot_resume()
         return self.tick()
 
     def check_out(self) -> SessionView:
         at = self._clock.utc()
-        # Activity must close before checkout persists total
+        # Activity and screenshots must close before checkout persists total
         self._activity_stop(at)
+        self._screenshot_stop()
         self._machine.apply(SessionAction.CHECK_OUT, at=at)
         self._persist_check_out(at)
         return self.tick()
@@ -311,6 +320,41 @@ class SessionService:
         except Exception as exc:
             self._logger.error("activity stop failed: %s", exc, exc_info=True)
 
+    def _screenshot_start(self, at: datetime) -> None:
+        if self._screenshot_service is None:
+            return
+        session = self._machine.session
+        if session is None or session.id is None:
+            return
+        try:
+            self._screenshot_service.start(session.id)
+        except Exception as exc:
+            self._logger.error("screenshot start failed: %s", exc, exc_info=True)
+
+    def _screenshot_pause(self) -> None:
+        if self._screenshot_service is None:
+            return
+        try:
+            self._screenshot_service.pause()
+        except Exception as exc:
+            self._logger.error("screenshot pause failed: %s", exc, exc_info=True)
+
+    def _screenshot_resume(self) -> None:
+        if self._screenshot_service is None:
+            return
+        try:
+            self._screenshot_service.resume()
+        except Exception as exc:
+            self._logger.error("screenshot resume failed: %s", exc, exc_info=True)
+
+    def _screenshot_stop(self) -> None:
+        if self._screenshot_service is None:
+            return
+        try:
+            self._screenshot_service.stop()
+        except Exception as exc:
+            self._logger.error("screenshot stop failed: %s", exc, exc_info=True)
+
     def restore_session(self) -> bool:
         """Load the persisted active session from the database on startup.
 
@@ -359,6 +403,18 @@ class SessionService:
                         self._activity_service._paused = True
             except Exception as exc:
                 self._logger.error("activity restore failed: %s", exc, exc_info=True)
+        # Rebuild screenshot state for restored session (Phase 7)
+        if restored and self._screenshot_service is not None and domain.id is not None:
+            try:
+                from app.domain.sessions.session import WorkSessionStatus
+
+                if domain.status is WorkSessionStatus.WORKING:
+                    self._screenshot_service.start(domain.id)
+                elif domain.status is WorkSessionStatus.BREAK:
+                    self._screenshot_service.start(domain.id)
+                    self._screenshot_service.pause()
+            except Exception as exc:
+                self._logger.error("screenshot restore failed: %s", exc, exc_info=True)
         return restored
 
     @staticmethod

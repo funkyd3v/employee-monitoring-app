@@ -138,6 +138,113 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle.add("activity", start=_start_activity, shutdown=_stop_activity)
 
+    # Screenshot worker — drift-resistant, atomic pipeline, idle-aware.
+    screenshot_supervisor: object | None = None
+
+    def _recover_screenshots(_ctx: LifecycleContext) -> None:
+        try:
+            result = container.screenshot_service.recover_orphans()
+            if result["orphan_files_removed"] or result["orphan_records_removed"]:
+                logger.info("Screenshot orphan recovery: %s", result)
+            else:
+                logger.debug("Screenshot orphan recovery: no orphans")
+        except Exception as exc:
+            logger.error("screenshot orphan recovery failed: %s", exc, exc_info=True)
+
+    def _start_screenshots(_ctx: LifecycleContext) -> None:
+        nonlocal screenshot_supervisor
+        _recover_screenshots(_ctx)
+        try:
+            from app.workers.screenshot_worker import ScreenshotWorkerSupervisor
+
+            supervisor = ScreenshotWorkerSupervisor(
+                container.screenshot_service,
+                poll_interval_ms=1000,
+            )
+            screenshot_supervisor = supervisor
+            supervisor.start()
+            lifecycle.context.set("screenshot_supervisor", supervisor)
+
+            # If a session was restored as WORKING, configure schedule now
+            session = container.session_service.machine.session
+            if session is not None and session.id is not None:
+                from app.domain.sessions.session import WorkSessionStatus
+
+                if session.status == WorkSessionStatus.WORKING:
+                    # Use session start as schedule anchor (drift-resistant)
+                    supervisor.set_schedule(session.started_at, container.screenshot_service.interval_seconds)
+                elif session.status == WorkSessionStatus.BREAK:
+                    supervisor.pause()
+
+            # Hook session actions to schedule updates (via container signal would be ideal;
+            # for now lifecycle observes via polling would work, but we hook via monkey-patch
+            # of session_service methods for immediate reaction without circular import).
+            orig_check_in = container.session_service.check_in
+            orig_take_break = container.session_service.take_break
+            orig_resume = container.session_service.resume
+            orig_check_out = container.session_service.check_out
+
+            def check_in_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
+                view = orig_check_in(*a, **kw)
+                try:
+                    sess = container.session_service.machine.session
+                    if sess is not None:
+                        supervisor.set_schedule(sess.started_at, container.screenshot_service.interval_seconds)
+                        supervisor.resume()
+                except Exception:
+                    pass
+                return view
+
+            def break_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
+                view = orig_take_break(*a, **kw)
+                try:
+                    supervisor.pause()
+                except Exception:
+                    pass
+                return view
+
+            def resume_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
+                view = orig_resume(*a, **kw)
+                try:
+                    supervisor.resume()
+                except Exception:
+                    pass
+                return view
+
+            def checkout_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
+                view = orig_check_out(*a, **kw)
+                try:
+                    supervisor.pause()
+                except Exception:
+                    pass
+                return view
+
+            container.session_service.check_in = check_in_wrapper  # type: ignore[method-assign]
+            container.session_service.take_break = break_wrapper  # type: ignore[method-assign]
+            container.session_service.resume = resume_wrapper  # type: ignore[method-assign]
+            container.session_service.check_out = checkout_wrapper  # type: ignore[method-assign]
+
+            logger.info("Screenshot worker started interval=%ss", container.screenshot_service.interval_seconds)
+        except Exception as exc:
+            logger.error("failed to start screenshot worker: %s", exc, exc_info=True)
+
+    def _stop_screenshots(_ctx: LifecycleContext) -> None:
+        nonlocal screenshot_supervisor
+        sup = lifecycle.context.get("screenshot_supervisor")
+        if sup is not None:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                sup.stop()  # type: ignore[attr-defined]
+        if screenshot_supervisor is not None:
+            import contextlib
+
+            with contextlib.suppress(Exception):
+                screenshot_supervisor.stop()  # type: ignore[attr-defined]
+            screenshot_supervisor = None
+
+    lifecycle.add("screenshots", start=_start_screenshots, shutdown=_stop_screenshots)
+
     ui = ui_controller.UiController(container, app)
 
     def _start_ui(_ctx: LifecycleContext) -> None:

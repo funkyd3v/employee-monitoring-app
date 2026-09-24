@@ -26,10 +26,13 @@ from app.infrastructure.database.migrations import migrate
 from app.infrastructure.security.credential_store import build_credential_store
 from app.services.activity_service import ActivityService
 from app.services.auth_service import AuthService
+from app.services.screenshot_service import ScreenshotService
 from app.services.session_service import SessionService
 
 if TYPE_CHECKING:
     import logging
+
+    from app.domain.screenshots.provider import ScreenshotProvider
 
 
 class Container:
@@ -78,6 +81,17 @@ class Container:
         # Let SessionService project real active/idle breakdown & pill state
         self.session_service.set_activity_service(self.activity_service)
 
+        # Phase 7 screenshots — drift-resistant, atomic, idle-aware.
+        self.screenshot_provider: ScreenshotProvider = self._build_screenshot_provider()
+        self.screenshot_service = ScreenshotService(
+            provider=self.screenshot_provider,
+            session_factory=self.database.session,
+            activity_service=self.activity_service,
+            data_dir=self.settings.data_dir,
+            interval_seconds=self.settings.server.screenshot_interval_seconds,
+        )
+        self.session_service.set_screenshot_service(self.screenshot_service)
+
     def open_database(self) -> None:
         """Migrate the schema to the current version at startup."""
         version = migrate(self.database.engine)
@@ -93,6 +107,8 @@ class Container:
         # would be detached — don't do that.
         self.session_service.set_session_factory(self.database.session)
         self.activity_service.set_session_factory(self.database.session)
+        self.screenshot_service.set_session_factory(self.database.session)
+        self.screenshot_service.set_data_dir(self.settings.data_dir)
         # keep old dual-arg shim working for any external callers
         with contextlib.suppress(Exception):
             self.session_service.set_persistence(session_factory=self.database.session)
@@ -112,6 +128,26 @@ class Container:
             except Exception:  # noqa: S110
                 pass
         return DummyActivityProvider()
+
+    @staticmethod
+    def _build_screenshot_provider() -> ScreenshotProvider:
+        """Select screenshot provider — MSS on Windows, dummy elsewhere."""
+        import sys
+
+        if sys.platform == "win32":
+            try:
+                from app.infrastructure.screenshots.screenshot_provider import (
+                    MssScreenshotProvider,
+                )
+
+                return MssScreenshotProvider()
+            except Exception:  # noqa: S110
+                pass
+        from app.infrastructure.screenshots.screenshot_provider import (
+            DummyScreenshotProvider,
+        )
+
+        return DummyScreenshotProvider()
 
     def close_database(self) -> None:
         self.database.dispose()
