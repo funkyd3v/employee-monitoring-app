@@ -250,13 +250,21 @@ def main(argv: list[str] | None = None) -> int:
 
     def _recover_sync(_ctx: LifecycleContext) -> None:
         try:
-            result = container.sync_service.recover_stale()
-            if result["queue_reset"] or result["screenshots_reset"]:
-                logger.info("Sync stale recovery: %s", result)
+            stale = container.sync_service.recover_stale()
+            orphans = container.sync_service.recover_orphans()
+            # Also run screenshot file↔DB orphan scan here so sync cleanup sees consistent state
+            try:
+                shot_orphans = container.screenshot_service.recover_orphans()
+            except Exception:
+                shot_orphans = {"orphan_files_removed": 0, "orphan_records_removed": 0}
+                logger.debug("screenshot orphan recovery in sync step failed", exc_info=True)
+            combined = {**stale, **orphans, **shot_orphans}
+            if any(combined.values()):
+                logger.info("Sync recovery: %s", combined)
             else:
-                logger.debug("Sync stale recovery: no stale rows")
+                logger.debug("Sync recovery: no orphans/stale")
         except Exception as exc:
-            logger.error("sync stale recovery failed: %s", exc, exc_info=True)
+            logger.error("sync recovery failed: %s", exc, exc_info=True)
 
     def _start_sync(_ctx: LifecycleContext) -> None:
         nonlocal sync_supervisor

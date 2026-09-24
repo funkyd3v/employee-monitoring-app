@@ -105,6 +105,59 @@ class SyncService:
             _logger.error("recover_stale failed: %s", exc, exc_info=True)
             return {"queue_reset": 0, "screenshots_reset": 0}
 
+    def recover_orphans(self) -> dict[str, int]:
+        """Remove sync_queue rows whose entity no longer exists (orphan records).
+
+        Handles crash where entity was cascade-deleted but queue row survived.
+        Preserves screenshots sync_status orphans via ScreenshotService.recover_orphans.
+        """
+        if self._session_factory is None:
+            return {"orphan_queue_removed": 0}
+        removed = 0
+        try:
+            with self._session_factory() as db:
+                from sqlalchemy import select
+
+                from app.infrastructure.database.repositories import SyncQueueRepository
+
+                q_repo = SyncQueueRepository(db)
+                items = list(db.scalars(select(SyncQueueItem)))
+                for item in items:
+                    exists = True
+                    try:
+                        if item.entity_type == "work_session":
+                            exists = db.get(WorkSession, item.entity_id) is not None
+                        elif item.entity_type == "break":
+                            exists = db.get(BreakRecord, item.entity_id) is not None
+                        elif item.entity_type == "activity_period":
+                            exists = db.get(ActivityPeriodRecord, item.entity_id) is not None
+                        elif item.entity_type == "user":
+                            exists = db.get(User, item.entity_id) is not None
+                        elif item.entity_type == "screenshot":
+                            exists = db.get(ScreenshotMetadata, item.entity_id) is not None
+                        else:
+                            # Unknown type — keep it for now, don't delete blindly
+                            exists = True
+                    except Exception:
+                        exists = True
+                    if not exists:
+                        db.delete(item)
+                        removed += 1
+                        _logger.info(
+                            "removed orphan queue item id=%s type=%s entity=%s",
+                            item.id,
+                            item.entity_type,
+                            item.entity_id,
+                        )
+                if removed:
+                    _logger.info("orphan queue cleanup removed=%s", removed)
+                db.commit()
+                # Also delegate screenshot orphan pass if data_dir available via provider?
+                # ScreenshotService handles file↔DB orphans separately.
+        except Exception as exc:
+            _logger.error("recover_orphans failed: %s", exc, exc_info=True)
+        return {"orphan_queue_removed": removed}
+
     # ── Single drain ───────────────────────────────────────────────────
 
     def sync_once(self, *, at: datetime | None = None) -> dict[str, int]:
