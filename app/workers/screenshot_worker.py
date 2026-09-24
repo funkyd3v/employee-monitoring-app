@@ -88,7 +88,7 @@ class ScreenshotWorker(QObject):
         self._paused = False
         _logger.info("screenshot worker resumed")
 
-    @Slot(object)
+    @Slot(object, object)
     def set_schedule(self, scheduled_start: object, interval_seconds: object) -> None:
         """(Re)configure the drift schedule — called on Check In / interval change."""
         try:
@@ -190,6 +190,7 @@ class ScreenshotWorkerSupervisor(QObject):
 
     captured = Signal(str)
     error_occurred = Signal(str)
+    _request_schedule = Signal(object, object)
 
     def __init__(
         self,
@@ -206,6 +207,7 @@ class ScreenshotWorkerSupervisor(QObject):
         self._worker.moveToThread(self._thread)
         self._worker.captured.connect(self.captured.emit)
         self._worker.error_occurred.connect(self.error_occurred.emit)
+        self._request_schedule.connect(self._worker.set_schedule)
         self._thread.started.connect(self._worker.start)
         self._thread.finished.connect(self._worker.deleteLater)
 
@@ -239,15 +241,7 @@ class ScreenshotWorkerSupervisor(QObject):
         )
 
     def set_schedule(self, scheduled_start: datetime, interval_seconds: int) -> None:
-        from PySide6.QtCore import QMetaObject, Qt
-
-        QMetaObject.invokeMethod(  # type: ignore[call-overload]
-            self._worker,
-            "set_schedule",
-            Qt.ConnectionType.QueuedConnection,
-            scheduled_start,
-            interval_seconds,
-        )
+        self._request_schedule.emit(scheduled_start, interval_seconds)
 
     @property
     def worker(self) -> ScreenshotWorker:
