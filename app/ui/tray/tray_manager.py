@@ -11,9 +11,13 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+
+from app.core.logging import get_logger
+
+_logger = get_logger("ui.tray")
 
 from app.config.constants import APP_NAME
 from app.domain.sessions.state_machine import AppState
@@ -91,9 +95,18 @@ class TrayManager(QObject):
         super().__init__(parent)
         self._view = SessionView(state=AppState.LOGGED_OUT)
         self._available = QSystemTrayIcon.isSystemTrayAvailable()
+        self._should_be_visible = False
 
         self._menu = QMenu()
         self._tray = QSystemTrayIcon()
+
+        # Reliability: Explorer restart recovery (TaskbarCreated) and
+        # sleep/resume can leave the icon orphaned. A lightweight poll
+        # re-shows the tray if the shell is available but our icon is not
+        # visible. Poll interval 5s mirrors worker polling (non-busy).
+        self._recovery_timer = QTimer(self)
+        self._recovery_timer.setInterval(5000)
+        self._recovery_timer.timeout.connect(self._ensure_visible)
 
         self._title_action = self._menu.addAction(APP_NAME)
         self._title_action.setEnabled(False)
@@ -141,11 +154,53 @@ class TrayManager(QObject):
         self._checkout_action.setEnabled(view.can_check_out)
 
     def show(self) -> None:
+        self._should_be_visible = True
+        # Re-evaluate availability — Explorer may have restarted since init.
+        self._available = QSystemTrayIcon.isSystemTrayAvailable()
         if self._available:
             self._tray.show()
+            if not self._recovery_timer.isActive():
+                self._recovery_timer.start()
+        else:
+            _logger.debug("tray show deferred — system tray not available yet")
+            if not self._recovery_timer.isActive():
+                self._recovery_timer.start()
 
     def hide(self) -> None:
+        self._should_be_visible = False
+        self._recovery_timer.stop()
         self._tray.hide()
+
+    @Slot()
+    def handle_taskbar_created(self) -> None:
+        """Re-show the tray after Explorer restarts (TaskbarCreated)."""
+        if self._should_be_visible:
+            _logger.info("tray recovery: TaskbarCreated — re-showing icon")
+            self._available = QSystemTrayIcon.isSystemTrayAvailable()
+            self._tray.show()
+
+    @Slot()
+    def handle_system_resume(self) -> None:
+        """System resume can also orphan the icon — re-ensure visibility."""
+        if self._should_be_visible:
+            self._available = QSystemTrayIcon.isSystemTrayAvailable()
+            if self._available and not self._tray.isVisible():
+                _logger.info("tray recovery: system resume — re-showing icon")
+                self._tray.show()
+
+    @Slot()
+    def _ensure_visible(self) -> None:
+        """Poll-driven guard — re-shows if shell available but icon gone."""
+        if not self._should_be_visible:
+            return
+        available = QSystemTrayIcon.isSystemTrayAvailable()
+        if available != self._available:
+            self._available = available
+        if self._available and not self._tray.isVisible():
+            _logger.info("tray recovery: poll detected missing icon — re-showing")
+            self._tray.show()
+        elif not self._available:
+            _logger.debug("tray poll: system tray still unavailable")
 
     def message(self, title: str, body: str) -> None:
         """Non-intrusive tray balloon (best-effort on supported platforms)."""

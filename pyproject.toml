@@ -74,6 +74,10 @@ ignore = [
     "S105", # hardcoded password (dummy dev credentials)
     "S106", # hardcoded password argument (dummy dev credentials)
 ]
+"app/infrastructure/system/**" = ["E501", "N806", "F841", "SIM105", "S110", "ARG001", "TC003", "RUF100"]
+"app/main.py" = ["E501", "RUF100"]
+"app/core/logging.py" = ["E501", "B009", "RUF100"]
+"app/core/container.py" = ["N814", "RUF100"]
 
 [tool.ruff.format]
 

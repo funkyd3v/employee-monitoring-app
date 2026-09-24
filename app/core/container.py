@@ -24,6 +24,7 @@ from app.domain.sessions.state_machine import SessionMachine
 from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
 from app.infrastructure.security.credential_store import build_credential_store
+from app.infrastructure.system.startup import StartupManager, build_startup_manager
 from app.services.activity_service import ActivityService
 from app.services.auth_service import AuthService
 from app.services.cleanup_service import CleanupService
@@ -108,8 +109,22 @@ class Container:
             retention_days=self.settings.retention_days,
         )
 
+        # Phase 9 Windows integration — startup behaviour (registry Run key)
+        self.startup_manager: StartupManager = build_startup_manager()
+
     def open_database(self) -> None:
         """Migrate the schema to the current version at startup."""
+        # Phase 9 crash-recovery: quarantine a corrupt DB before migrate
+        try:
+            from pathlib import Path as _P
+
+            from app.config.constants import DATABASE_DIR, DB_FILENAME
+            from app.infrastructure.system.crash_handler import verify_database
+
+            db_path = _P(self.settings.subdir(DATABASE_DIR)) / DB_FILENAME
+            verify_database(db_path)
+        except Exception:  # noqa: S110
+            pass
         version = migrate(self.database.engine)
         self.logger.info("database ready (schema v%s)", version)
         self._inject_persistence()
@@ -213,6 +228,14 @@ def bootstrap_container(
         backup_count=settings.local.log_backup_count,
         console=console_logging,
     )
+    # Phase 9 logging hardening — global handlers + banner (never crash bootstrap)
+    try:
+        from app.core.logging import install_global_handlers, log_startup_banner
+
+        install_global_handlers()
+        log_startup_banner(settings)
+    except Exception:  # noqa: S110
+        pass
     root_logger.info("Application started (mode=%s)", settings.mode)
 
     container = Container(settings)

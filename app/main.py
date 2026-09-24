@@ -38,11 +38,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"employee-monitoring-agent {APP_VERSION}",
     )
+    parser.add_argument(
+        "--minimized",
+        action="store_true",
+        help="Start minimized to tray (used by autostart registry entry).",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
-    build_parser().parse_args(argv)
+    args = build_parser().parse_args(argv)
 
     container = bootstrap_container()
     logger = container.logger
@@ -53,6 +58,40 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle = Lifecycle(LifecycleContext())
 
+    # Phase 9: single-instance guard — prevents concurrent DB corruption.
+    # Must be the first lifecycle step so its shutdown is last (reverse).
+    from pathlib import Path as _P
+
+    guard: object | None = None
+
+    def _acquire_single_instance(_ctx: LifecycleContext) -> None:
+        nonlocal guard
+        from app.infrastructure.system.single_instance import SingleInstanceGuard
+
+        g = SingleInstanceGuard(_P(container.settings.data_dir) / "app.lock")
+        if not g.acquire():
+            logger.error("Another instance is already running — exiting.")
+            raise SystemExit(1)
+        guard = g
+        lifecycle.context.set("single_instance_guard", g)
+
+    def _release_single_instance(_ctx: LifecycleContext) -> None:
+        nonlocal guard
+        g = lifecycle.context.get("single_instance_guard")
+        if g is not None:
+            try:
+                g.release()  # type: ignore[attr-defined]
+            except Exception:
+                logger.debug("single-instance release failed", exc_info=True)
+        if guard is not None:
+            try:
+                guard.release()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            guard = None
+
+    lifecycle.add("single_instance", start=_acquire_single_instance, shutdown=_release_single_instance)
+
     # Database lifecycle: migrate at start, dispose on shutdown
     # (docs/ARCHITECTURE.md § Application lifecycle).
     lifecycle.add(
@@ -60,6 +99,40 @@ def main(argv: list[str] | None = None) -> int:
         start=lambda _ctx: container.open_database(),
         shutdown=lambda _ctx: container.close_database(),
     )
+
+    # Phase 9: system power / session events (sleep/lock/resume, TaskbarCreated)
+    # Installed right after DB so it outlives all workers (reverse shutdown).
+    power_manager: object | None = None
+
+    def _start_power(_ctx: LifecycleContext) -> None:
+        nonlocal power_manager
+        try:
+            from app.infrastructure.system.power import SystemPowerManager
+
+            mgr = SystemPowerManager()
+            mgr.install(app)
+            power_manager = mgr
+            lifecycle.context.set("power_manager", mgr)
+            logger.info("Power event manager installed (native=%s)", mgr.is_installed)
+        except Exception as exc:
+            logger.warning("power manager install failed: %s", exc, exc_info=True)
+
+    def _stop_power(_ctx: LifecycleContext) -> None:
+        nonlocal power_manager
+        mgr = lifecycle.context.get("power_manager")
+        if mgr is not None:
+            try:
+                mgr.uninstall(app)  # type: ignore[attr-defined]
+            except Exception:
+                logger.debug("power manager uninstall failed", exc_info=True)
+        if power_manager is not None:
+            try:
+                power_manager.uninstall(app)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+            power_manager = None
+
+    lifecycle.add("power", start=_start_power, shutdown=_stop_power)
 
     # Authentication restore: after the DB is ready, before the UI.
     # A saved session puts the app straight into READY; otherwise LOGGED_OUT.
@@ -338,8 +411,85 @@ def main(argv: list[str] | None = None) -> int:
 
     ui = ui_controller.UiController(container, app)
 
+    # Phase 9 wiring helper — connect power manager signals to workers/tray.
+    # The manager is installed as a lifecycle step, but connections must be
+    # (re)established after workers/tray exist. Use lifecycle context lookup
+    # so the lambdas stay valid even if workers restart.
+    def _wire_power_signals() -> None:
+        mgr = lifecycle.context.get("power_manager")
+        if mgr is None:
+            return
+        try:
+            from PySide6.QtCore import QMetaObject, Qt
+
+            # Tray — TaskbarCreated and resume orphan recovery
+            try:
+                mgr.taskbar_created.connect(ui.tray.handle_taskbar_created)  # type: ignore[attr-defined]
+                mgr.system_resume.connect(ui.tray.handle_system_resume)  # type: ignore[attr-defined]
+            except Exception:
+                logger.debug("power→tray wiring failed", exc_info=True)
+
+            # Workers — suspend/resume with lock/unlock mapping
+            # Use queued dispatch so cross-thread slots are safe.
+            def _suspend_workers() -> None:
+                for key in ("activity_supervisor", "screenshot_supervisor"):
+                    sup = lifecycle.context.get(key)
+                    if sup is not None:
+                        try:
+                            QMetaObject.invokeMethod(sup.worker, "handle_system_suspend", Qt.ConnectionType.QueuedConnection)  # type: ignore[attr-defined]
+                        except Exception:
+                            try:
+                                sup.worker.handle_system_suspend()  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
+                    # Fallback to service-level pause for immediate effect
+                    if key == "activity_supervisor":
+                        try:
+                            # Don't synthesize activity — just pause polling
+                            pass
+                        except Exception:
+                            pass
+
+            def _resume_workers() -> None:
+                for key in ("activity_supervisor", "screenshot_supervisor"):
+                    sup = lifecycle.context.get(key)
+                    if sup is not None:
+                        try:
+                            QMetaObject.invokeMethod(sup.worker, "handle_system_resume", Qt.ConnectionType.QueuedConnection)  # type: ignore[attr-defined]
+                        except Exception:
+                            try:
+                                sup.worker.handle_system_resume()  # type: ignore[attr-defined]
+                            except Exception:
+                                pass
+                # Also refresh session tick so timer doesn't show gap
+                try:
+                    container.session_service.tick()
+                except Exception:
+                    pass
+
+            mgr.system_suspend.connect(_suspend_workers)  # type: ignore[attr-defined]
+            mgr.system_resume.connect(_resume_workers)  # type: ignore[attr-defined]
+            mgr.session_locked.connect(_suspend_workers)  # type: ignore[attr-defined]
+            mgr.session_unlocked.connect(_resume_workers)  # type: ignore[attr-defined]
+            logger.info("Power → workers/tray wiring complete")
+        except Exception as exc:
+            logger.warning("power wiring failed: %s", exc, exc_info=True)
+
     def _start_ui(_ctx: LifecycleContext) -> None:
         ui.start()
+        # Wire power → workers/tray now that all lifecycle objects exist
+        _wire_power_signals()
+        # Phase 9: autostart entry handled via settings? StartupManager is
+        # container-provided for external toggles; no auto-enable here.
+        # Minimize-to-tray when launched via registry ( --minimized )
+        if getattr(args, "minimized", False):
+            try:
+                # Keep tray visible but hide any dashboard/login that UiController showed
+                ui.dashboard.hide()
+                ui.login.hide()
+                logger.info("Started minimized to tray (autostart).")
+            except Exception:
+                logger.debug("minimized hide failed", exc_info=True)
         logger.info(
             "Bootstrap complete. Data dir: %s (mode=%s)",
             container.storage_root(),

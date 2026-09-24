@@ -212,3 +212,62 @@ def setup_logging(
 def get_logger(name: str) -> logging.Logger:
     """Return a namespaced child logger of the application root."""
     return logging.getLogger(f"{_APP_LOGGER_NAME}.{name}")
+
+
+# ── Phase 9: hardening helpers ────────────────────────────────────────
+
+
+def install_global_handlers() -> None:
+    """Install global exception + Qt handlers (Phase 9 logging hardening).
+
+    Delegates to :mod:`app.infrastructure.system.crash_handler` while keeping
+    the logging module as the public surface for callers that already import
+    from ``app.core.logging``.
+    """
+    try:
+        from app.infrastructure.system.crash_handler import (
+            install_global_handlers as _install,
+        )
+
+        _install()
+    except Exception:
+        get_logger("logging").debug("global handler install failed", exc_info=True)
+
+
+def log_startup_banner(settings: object | None = None) -> None:
+    """Emit a single structured banner at startup (version, mode, data dir).
+
+    Helpful for post-crash diagnostics: the log always opens with an
+    identifiable header even when the app later crashes early.
+    """
+    try:
+        from app.config.constants import APP_VERSION
+
+        logger = get_logger("lifecycle")
+        mode = getattr(getattr(settings, "local", None), "mode", None) if settings else None
+        data_dir = getattr(getattr(settings, "local", None), "data_dir", None) if settings else None
+        if mode is None and settings is not None and hasattr(settings, "mode"):
+            mode = settings.mode
+        if data_dir is None and settings is not None and hasattr(settings, "data_dir"):
+            data_dir = settings.data_dir
+        logger.info(
+            "=== Employee Monitoring Agent v%s starting (mode=%s data_dir=%s) ===",
+            APP_VERSION,
+            mode or "local",
+            data_dir or "?",
+        )
+    except Exception:  # noqa: S110
+        pass
+
+
+def reset_logging() -> None:
+    """Remove all handlers from the app logger — for tests only."""
+    root = logging.getLogger(_APP_LOGGER_NAME)
+    for h in list(root.handlers):
+        try:
+            root.removeHandler(h)
+            h.close()
+        except Exception:  # noqa: S110
+            pass
+    # Also clear cached global-handler flag so reinstall is observable in tests
+    root.setLevel(logging.NOTSET)
