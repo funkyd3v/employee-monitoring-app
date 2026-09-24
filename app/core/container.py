@@ -24,6 +24,7 @@ from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
 from app.infrastructure.security.credential_store import build_credential_store
 from app.services.auth_service import AuthService
+from app.services.session_service import SessionService
 
 if TYPE_CHECKING:
     import logging
@@ -59,8 +60,11 @@ class Container:
             session_factory=self.database.session,
             machine=self.session_machine,
         )
-        # Phase 4+: repositories, workers — registered here, never imported
-        # by callers.
+
+        # Phase 4 UI orchestration. The session service shares the app-level
+        # machine with auth, so today's in-memory projection and Phase 5's
+        # persistence live behind the same surface.
+        self.session_service = SessionService(machine=self.session_machine)
 
     def open_database(self) -> None:
         """Migrate the schema to the current version at startup."""

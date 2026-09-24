@@ -10,9 +10,22 @@ from __future__ import annotations
 import argparse
 import sys
 
+from PySide6.QtWidgets import QApplication
+
 from app.config.constants import APP_VERSION
 from app.core.container import bootstrap_container
 from app.core.lifecycle import Lifecycle, LifecycleContext
+from app.ui import controller as ui_controller
+from app.ui.theme import apply_theme
+
+
+def _make_app() -> QApplication:
+    """Create (or reuse) the Qt application and apply the theme."""
+    existing = QApplication.instance()
+    app = existing if isinstance(existing, QApplication) else QApplication(sys.argv[:1])
+    app.setQuitOnLastWindowClosed(False)
+    apply_theme(app)
+    return app
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -33,6 +46,10 @@ def main(argv: list[str] | None = None) -> int:
 
     container = bootstrap_container()
     logger = container.logger
+
+    # Qt infrastructure: one QApplication per process, themed, and never
+    # quitting when the last window hides (close-to-tray is not an exit).
+    app = _make_app()
 
     lifecycle = Lifecycle(LifecycleContext())
 
@@ -59,24 +76,28 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle.add("auth", start=_restore_auth, shutdown=_close_auth)
 
-    def _ready(context: LifecycleContext) -> None:  # noqa: ARG001
-        # Phase 4+ replaces this with UI/dashboard startup.
+    # UI: owns the windows + tray, pumps the event loop until Exit (tray).
+    ui = ui_controller.UiController(container, app)
+
+    def _start_ui(_ctx: LifecycleContext) -> None:
+        ui.start()
         logger.info(
             "Bootstrap complete. Data dir: %s (mode=%s)",
             container.storage_root(),
             container.mode,
         )
 
-    lifecycle.add("core", start=_ready, shutdown=None)
+    def _stop_ui(_ctx: LifecycleContext) -> None:
+        ui.shutdown()
+
+    lifecycle.add("ui", start=_start_ui, shutdown=_stop_ui)
 
     lifecycle.start()
     try:
-        # Future phases: run Qt event loop here; lifecycle.shutdown() runs
-        # on clean exit.
-        pass
+        exit_code = app.exec()
     finally:
         lifecycle.shutdown()
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
