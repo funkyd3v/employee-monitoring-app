@@ -32,7 +32,9 @@ _logger = get_logger("system.single_instance")
 class SingleInstanceGuard:
     """File-lock + optional named mutex guard."""
 
-    def __init__(self, lock_path: Path, mutex_name: str = "EmployeeMonitoringAgent") -> None:
+    def __init__(
+        self, lock_path: Path, mutex_name: str = "EmployeeMonitoringAgent"
+    ) -> None:
         self._lock_path = lock_path
         self._mutex_name = mutex_name
         self._file: object | None = None
@@ -95,7 +97,9 @@ class SingleInstanceGuard:
             except Exception:
                 _logger.debug("failed to write pid to lock file", exc_info=True)
         except Exception as exc:
-            _logger.warning("failed to create lock file %s: %s", self._lock_path, exc, exc_info=True)
+            _logger.warning(
+                "failed to create lock file %s: %s", self._lock_path, exc, exc_info=True
+            )
             # Don't block startup if we can't create the lock file — log and allow.
             self._file = None
             # Still try mutex; if no mutex either, treat as acquired (can't guard)
@@ -120,7 +124,9 @@ class SingleInstanceGuard:
                     return False
                 self._mutex = mutex
             except Exception:
-                _logger.debug("named mutex unavailable — file lock is sole guard", exc_info=True)
+                _logger.debug(
+                    "named mutex unavailable — file lock is sole guard", exc_info=True
+                )
                 self._mutex = None
 
         self._acquired = True

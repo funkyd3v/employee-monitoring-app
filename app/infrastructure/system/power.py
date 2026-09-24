@@ -98,7 +98,6 @@ class SystemPowerManager(QObject):
             return False
 
         try:
-
             # Resolve imported win32 constants lazily so module stays importable
             # without pywin32 on CI.
             filt = _PowerEventFilter(self)
@@ -115,7 +114,9 @@ class SystemPowerManager(QObject):
                 try:
                     import ctypes
 
-                    ctypes.windll.user32.RegisterWindowMessageW.argtypes = [ctypes.c_wchar_p]
+                    ctypes.windll.user32.RegisterWindowMessageW.argtypes = [
+                        ctypes.c_wchar_p
+                    ]
                     ctypes.windll.user32.RegisterWindowMessageW.restype = ctypes.c_uint
                     self._taskbar_msg_id = int(
                         ctypes.windll.user32.RegisterWindowMessageW("TaskbarCreated")
@@ -162,12 +163,16 @@ class _PowerEventFilter:  # type: ignore[no-redef]
         from PySide6.QtCore import QAbstractNativeEventFilter
 
         class _Impl(QAbstractNativeEventFilter):
-            def __init__(self, mgr: SystemPowerManager, outer: _PowerEventFilter) -> None:
+            def __init__(
+                self, mgr: SystemPowerManager, outer: _PowerEventFilter
+            ) -> None:
                 super().__init__()
                 self._mgr = mgr
                 self._outer = outer
 
-            def nativeEventFilter(self, event_type: bytes, message: object) -> tuple[bool, int]:  # noqa: N802
+            def nativeEventFilter(
+                self, event_type: bytes, message: object
+            ) -> tuple[bool, int]:  # noqa: N802
                 try:
                     return self._outer._handle(event_type, message)
                 except Exception:

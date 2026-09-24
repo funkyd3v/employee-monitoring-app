@@ -12,11 +12,11 @@ detect → stop creating → preserve metadata → warn (contract-ready).
 
 from __future__ import annotations
 
+import contextlib
 import shutil
 import tempfile
 import uuid
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -41,6 +41,8 @@ from app.infrastructure.database.repositories import (
 )
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.orm import Session
 
     from app.domain.screenshots.provider import ScreenshotProvider
@@ -146,7 +148,9 @@ class ScreenshotService:
             try:
                 activity_state = self._activity.current_state(at=at)
             except Exception:
-                _logger.debug("activity state lookup failed — defaulting ACTIVE", exc_info=True)
+                _logger.debug(
+                    "activity state lookup failed — defaulting ACTIVE", exc_info=True
+                )
 
         # Low-disk guard
         pending_dir = self._pending_dir()
@@ -155,10 +159,14 @@ class ScreenshotService:
                 pending_dir.mkdir(parents=True, exist_ok=True)
                 free = shutil.disk_usage(pending_dir).free
                 if free < _MIN_FREE_BYTES:
-                    _logger.warning("low disk — screenshot capture skipped free=%s", free)
+                    _logger.warning(
+                        "low disk — screenshot capture skipped free=%s", free
+                    )
                     return None
             except Exception:
-                _logger.debug("disk check failed — proceeding cautiously", exc_info=True)
+                _logger.debug(
+                    "disk check failed — proceeding cautiously", exc_info=True
+                )
 
         # Capture
         try:
@@ -172,7 +180,9 @@ class ScreenshotService:
 
         # Apply idle border
         try:
-            image = apply_idle_border(image, idle=(activity_state is ActivityState.IDLE))
+            image = apply_idle_border(
+                image, idle=(activity_state is ActivityState.IDLE)
+            )
         except Exception as exc:
             _logger.error("idle border failed: %s", exc, exc_info=True)
             # Continue without border — capture is more valuable than its frame
@@ -243,13 +253,14 @@ class ScreenshotService:
             _logger.error("screenshot pipeline failed: %s", exc, exc_info=True)
             # Clean up tmp/final on failure
             if tmp_path is not None and tmp_path.exists():
-                try:
+                with contextlib.suppress(Exception):
                     tmp_path.unlink()
-                except Exception:
-                    pass
             if final_path.exists():
                 # File was moved but DB failed — orphan will be cleaned on next startup scan
-                _logger.warning("pipeline DB failed after file move — orphan may remain %s", final_path)
+                _logger.warning(
+                    "pipeline DB failed after file move — orphan may remain %s",
+                    final_path,
+                )
             return None
 
     # ── Orphan recovery ───────────────────────────────────────────────
@@ -272,7 +283,7 @@ class ScreenshotService:
 
         try:
             with self._session_factory() as db:
-                s_repo = ScreenshotRepository(db)
+                ScreenshotRepository(db)
                 # All screenshot file_paths from DB
                 from sqlalchemy import select
 
@@ -289,11 +300,15 @@ class ScreenshotService:
                             orphan_files_removed += 1
                             _logger.info("removed orphan screenshot file %s", p.name)
                         except Exception:
-                            _logger.debug("failed to remove orphan file %s", p, exc_info=True)
+                            _logger.debug(
+                                "failed to remove orphan file %s", p, exc_info=True
+                            )
                     else:
                         # Validate file exists and is readable; else mark failed
                         if not validate_image(p):
-                            _logger.warning("corrupt screenshot file detected %s", p.name)
+                            _logger.warning(
+                                "corrupt screenshot file detected %s", p.name
+                            )
 
                 # Orphan records: DB row but file missing → mark failed (or remove)
                 for row in rows:
@@ -304,11 +319,21 @@ class ScreenshotService:
                         try:
                             from sqlalchemy import delete as sa_delete
 
-                            db.execute(sa_delete(ScreenshotMetadata).where(ScreenshotMetadata.id == row.id))
+                            db.execute(
+                                sa_delete(ScreenshotMetadata).where(
+                                    ScreenshotMetadata.id == row.id
+                                )
+                            )
                             orphan_records_removed += 1
-                            _logger.info("removed orphan screenshot record id=%s", row.id)
+                            _logger.info(
+                                "removed orphan screenshot record id=%s", row.id
+                            )
                         except Exception:
-                            _logger.debug("failed to remove orphan record %s", row.id, exc_info=True)
+                            _logger.debug(
+                                "failed to remove orphan record %s",
+                                row.id,
+                                exc_info=True,
+                            )
 
                 valid = len(db_paths) - orphan_records_removed
                 db.commit()
@@ -339,7 +364,11 @@ class ScreenshotService:
 
             with self._session_factory() as db:
                 rows = list(
-                    db.scalars(select(ScreenshotMetadata).where(ScreenshotMetadata.session_id == session_id))
+                    db.scalars(
+                        select(ScreenshotMetadata).where(
+                            ScreenshotMetadata.session_id == session_id
+                        )
+                    )
                 )
                 db.commit()
                 return [

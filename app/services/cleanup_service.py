@@ -138,9 +138,7 @@ class CleanupService:
                 pending_dir.mkdir(parents=True, exist_ok=True)
                 free = shutil.disk_usage(pending_dir).free
                 if free < _MIN_FREE_BYTES:
-                    _logger.warning(
-                        "low disk free=%s — preserved unsynced", free
-                    )
+                    _logger.warning("low disk free=%s — preserved unsynced", free)
         except Exception:
             _logger.debug("disk check failed during cleanup", exc_info=True)
 

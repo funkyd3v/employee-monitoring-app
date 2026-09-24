@@ -442,7 +442,10 @@ class SessionService:
                 # If WORKING/BREAK, re-attach activity tracking from persisted periods
                 from app.domain.sessions.session import WorkSessionStatus
 
-                if domain.status in (WorkSessionStatus.WORKING, WorkSessionStatus.BREAK):
+                if domain.status in (
+                    WorkSessionStatus.WORKING,
+                    WorkSessionStatus.BREAK,
+                ):
                     self._activity_service.restore(domain.id)
                     if domain.status is WorkSessionStatus.BREAK:
                         # Ensure service is paused (no idle ticks during break)

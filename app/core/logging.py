@@ -244,8 +244,16 @@ def log_startup_banner(settings: object | None = None) -> None:
         from app.config.constants import APP_VERSION
 
         logger = get_logger("lifecycle")
-        mode = getattr(getattr(settings, "local", None), "mode", None) if settings else None
-        data_dir = getattr(getattr(settings, "local", None), "data_dir", None) if settings else None
+        mode = (
+            getattr(getattr(settings, "local", None), "mode", None)
+            if settings
+            else None
+        )
+        data_dir = (
+            getattr(getattr(settings, "local", None), "data_dir", None)
+            if settings
+            else None
+        )
         if mode is None and settings is not None and hasattr(settings, "mode"):
             mode = settings.mode
         if data_dir is None and settings is not None and hasattr(settings, "data_dir"):

@@ -2,21 +2,22 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import sys
 import threading
-from pathlib import Path
-from unittest.mock import MagicMock
+from typing import TYPE_CHECKING
 
-import pytest
-
+from app.core.logging import _redact_message
 from app.infrastructure.system.crash_handler import verify_database
 from app.infrastructure.system.power import SystemPowerManager
 from app.infrastructure.system.single_instance import SingleInstanceGuard
 from app.infrastructure.system.startup import DummyStartupManager, WindowsStartupManager
-from app.core.logging import _redact_message, get_logger
 from app.ui.tray.tray_manager import TrayManager
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def test_dummy_startup_manager_noop() -> None:
@@ -26,10 +27,14 @@ def test_dummy_startup_manager_noop() -> None:
     assert m.disable() is False
 
 
-def test_windows_startup_manager_is_enabled_reports_false_when_missing(tmp_path: Path) -> None:
+def test_windows_startup_manager_is_enabled_reports_false_when_missing(
+    tmp_path: Path,
+) -> None:
     # On non-Windows, class still importable but should gracefully return False
     # We instantiate with dummy key path that doesn't exist.
-    m = WindowsStartupManager(value_name="TestPhase9", key_path=r"Software\NoSuchKey_Phase9")
+    m = WindowsStartupManager(
+        value_name="TestPhase9", key_path=r"Software\NoSuchKey_Phase9"
+    )
     # Should not raise
     assert m.is_enabled() is False
 
@@ -85,7 +90,9 @@ def test_power_manager_signals() -> None:
     assert calls == ["suspend", "resume", "locked", "unlocked", "taskbar"]
 
 
-def test_power_manager_install_noop_on_non_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_power_manager_install_noop_on_non_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
     mgr = SystemPowerManager()
     # Should return False and not raise
@@ -121,7 +128,7 @@ def test_verify_database_missing_returns_true(tmp_path: Path) -> None:
     assert verify_database(db) is True
 
 
-def test_tray_recovery_handlers_exist(qapp: object) -> None:  # noqa: ARG001
+def test_tray_recovery_handlers_exist(qapp: object) -> None:
     # Requires QApplication (pytest-qt's qapp fixture)
     mgr = TrayManager()
     assert hasattr(mgr, "handle_taskbar_created")
@@ -161,11 +168,14 @@ def test_log_startup_banner_does_not_raise(tmp_path: Path) -> None:
 
     # Should not raise even with dummy settings
     log_startup_banner(None)
+
     class _FakeLocal:
         mode = "local"
         data_dir = tmp_path
+
     class _FakeSettings:
         local = _FakeLocal()
         mode = "local"
         data_dir = tmp_path
+
     log_startup_banner(_FakeSettings())

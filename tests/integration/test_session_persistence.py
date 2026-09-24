@@ -7,8 +7,6 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytest
-from sqlalchemy import create_engine
-
 from app.core.clock import Clock
 from app.domain.sessions.session import WorkSessionStatus
 from app.domain.sessions.state_machine import AppState, SessionAction
@@ -16,6 +14,7 @@ from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
 from app.infrastructure.database.repositories import SessionRepository, UserRepository
 from app.services.session_service import SessionService
+from sqlalchemy import create_engine
 
 T0 = datetime(2026, 9, 23, 8, 0, tzinfo=UTC)
 USER_ID_PLACEHOLDER = 0  # real id comes from DB upsert
@@ -55,7 +54,9 @@ def temp_database():
             db_path.unlink()
 
 
-def make_service_with_user(db_path: Path, clock: Clock) -> tuple[SessionService, Database, int]:
+def make_service_with_user(
+    db_path: Path, clock: Clock
+) -> tuple[SessionService, Database, int]:
     """Create a Service bound to db_path with a real user row."""
     db = Database(db_path)
     # ensure user exists
@@ -120,7 +121,7 @@ def test_full_session_lifecycle_with_persistence(temp_database):
 def test_session_restoration_after_restart(temp_database):
     _, db_path = temp_database
     clock1 = FixedClock(T0)
-    service1, db1, uid = make_service_with_user(db_path, clock1)
+    service1, _db1, uid = make_service_with_user(db_path, clock1)
     service1.machine.apply(SessionAction.LOGIN, at=T0)
     service1.check_in()
     clock1.advance(300)
@@ -212,7 +213,9 @@ def test_break_persisted_and_restored(temp_database):
 
     # restart while on break — advance clock so break duration >0
     resumed_clock = FixedClock(T0 + timedelta(seconds=120))
-    service2 = SessionService(clock=resumed_clock, session_factory=Database(db_path).session)
+    service2 = SessionService(
+        clock=resumed_clock, session_factory=Database(db_path).session
+    )
     service2.set_user(uid)
     assert service2.restore_session()
     assert service2.state is AppState.BREAK

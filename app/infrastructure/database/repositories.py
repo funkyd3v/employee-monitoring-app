@@ -237,9 +237,7 @@ class ActivityRepository:
         self._session.flush()
         return open_rows
 
-    def open_for_session(
-        self, session_id: int
-    ) -> ActivityPeriodRecord | None:
+    def open_for_session(self, session_id: int) -> ActivityPeriodRecord | None:
         """The still-open period for ``session_id``, if any."""
         return self._session.scalar(
             select(ActivityPeriodRecord)
@@ -256,9 +254,7 @@ class ActivityRepository:
         if row is None:
             return None
         row.ended_at = ended_at
-        row.duration_seconds = max(
-            0, int((ended_at - row.started_at).total_seconds())
-        )
+        row.duration_seconds = max(0, int((ended_at - row.started_at).total_seconds()))
         self._session.flush()
         return row
 

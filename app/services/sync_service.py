@@ -257,7 +257,6 @@ class SyncService:
 
         try:
             with self._session_factory() as db:
-
                 from app.infrastructure.database.repositories import (
                     SyncQueueRepository,
                 )
@@ -310,10 +309,13 @@ class SyncService:
                         else:
                             # Failure — keep data, record error, respect retryable
                             if result.retryable:
-                                q_repo2.record_error(item.id, result.error or "sync failed")  # noqa: E501
+                                q_repo2.record_error(
+                                    item.id, result.error or "sync failed"
+                                )
                             else:
                                 q_repo2.record_error(
-                                    item.id, result.error or "sync failed (non-retryable)"  # noqa: E501
+                                    item.id,
+                                    result.error or "sync failed (non-retryable)",
                                 )
                             db2.commit()
                             failed += 1
@@ -324,15 +326,24 @@ class SyncService:
                                 result.retryable,
                             )
                             # If auth required or backend unavailable,
-                            if result.connectivity == ConnectivityState.AUTHENTICATION_REQUIRED:  # noqa: E501
+                            if (
+                                result.connectivity
+                                == ConnectivityState.AUTHENTICATION_REQUIRED
+                            ):
                                 self._connectivity = result.connectivity
                                 break
-                            if result.connectivity in (
-                                ConnectivityState.OFFLINE,
-                                ConnectivityState.BACKEND_UNAVAILABLE,
-                            ) and failed >= 1:
+                            if (
+                                result.connectivity
+                                in (
+                                    ConnectivityState.OFFLINE,
+                                    ConnectivityState.BACKEND_UNAVAILABLE,
+                                )
+                                and failed >= 1
+                            ):
                                 # Short-circuit remaining items — backend is down
-                                skipped_backoff += len(items) - (synced + failed + skipped_backoff)  # noqa: E501
+                                skipped_backoff += len(items) - (
+                                    synced + failed + skipped_backoff
+                                )
                                 break
 
                 # Ensure outer session committed (already per item)
@@ -414,7 +425,10 @@ class SyncService:
                                 result.error,
                                 result.retryable,
                             )
-                            if result.connectivity == ConnectivityState.AUTHENTICATION_REQUIRED:  # noqa: E501
+                            if (
+                                result.connectivity
+                                == ConnectivityState.AUTHENTICATION_REQUIRED
+                            ):
                                 self._connectivity = result.connectivity
                                 break
 
@@ -520,7 +534,11 @@ class SyncService:
                     )
         except Exception as exc:
             _logger.debug(
-                "payload build failed for %s:%s: %s", item.entity_type, item.entity_id, exc, exc_info=True  # noqa: E501
+                "payload build failed for %s:%s: %s",
+                item.entity_type,
+                item.entity_id,
+                exc,
+                exc_info=True,
             )
         return {
             "entity_type": item.entity_type,
@@ -539,14 +557,18 @@ class SyncService:
                     select(func.count())
                     .select_from(SyncQueueItem)
                     .where(
-                        SyncQueueItem.status.in_([SyncStatus.PENDING.value, SyncStatus.FAILED.value])  # noqa: E501
+                        SyncQueueItem.status.in_(
+                            [SyncStatus.PENDING.value, SyncStatus.FAILED.value]
+                        )
                     )
                 )
                 s_pending = db.scalar(
                     select(func.count())
                     .select_from(ScreenshotMetadata)
                     .where(
-                        ScreenshotMetadata.sync_status.in_([SyncStatus.PENDING.value, SyncStatus.FAILED.value])  # noqa: E501
+                        ScreenshotMetadata.sync_status.in_(
+                            [SyncStatus.PENDING.value, SyncStatus.FAILED.value]
+                        )
                     )
                 )
                 return int(q_pending or 0) + int(s_pending or 0)

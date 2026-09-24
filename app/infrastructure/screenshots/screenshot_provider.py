@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image as PILImage
-from PIL.Image import Image
 
 from app.core.exceptions import ProviderUnavailableError
 from app.core.logging import get_logger
 from app.domain.screenshots.processing import encode_jpeg
 from app.domain.screenshots.provider import ScreenshotProvider
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from PIL.Image import Image
 
 _logger = get_logger("screenshots.provider")
 

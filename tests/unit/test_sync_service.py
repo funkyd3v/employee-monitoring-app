@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from app.domain.sync.provider import ConnectivityState
@@ -11,9 +11,17 @@ from app.domain.sync.sync import SyncStatus
 from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
 from app.infrastructure.database.models import ScreenshotMetadata, SyncQueueItem
-from app.infrastructure.database.repositories import ScreenshotRepository, SyncQueueRepository, UserRepository, SessionRepository
+from app.infrastructure.database.repositories import (
+    ScreenshotRepository,
+    SessionRepository,
+    SyncQueueRepository,
+    UserRepository,
+)
 from app.infrastructure.network.sync_adapter import DummySyncProvider
 from app.services.sync_service import SyncService
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 T0 = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
 
@@ -30,19 +38,28 @@ def _make_user_and_session(db: Database) -> int:
     with db.session() as s:
         u_repo = UserRepository(s)
         sess_repo = SessionRepository(s)
-        user = u_repo.upsert(external_user_id="ext-1", email="a@example.com", display_name="A", team_name="T")
+        user = u_repo.upsert(
+            external_user_id="ext-1",
+            email="a@example.com",
+            display_name="A",
+            team_name="T",
+        )
         s.flush()
         ws = sess_repo.create(user_id=user.id, started_at=T0)
         s.commit()
         return ws.id
 
 
-def test_sync_queue_success_deletes_only_after_confirmed(tmp_path: Path, db: Database) -> None:
+def test_sync_queue_success_deletes_only_after_confirmed(
+    tmp_path: Path, db: Database
+) -> None:
     ws_id = _make_user_and_session(db)
     # Enqueue a work_session item
     with db.session() as s:
         q = SyncQueueRepository(s)
-        item = q.enqueue(entity_type="work_session", entity_id=ws_id, operation="CREATE")
+        item = q.enqueue(
+            entity_type="work_session", entity_id=ws_id, operation="CREATE"
+        )
         s.commit()
         item_id = item.id
 
@@ -67,7 +84,14 @@ def test_sync_screenshot_upload_success(tmp_path: Path, db: Database) -> None:
 
     with db.session() as s:
         repo2 = ScreenshotRepository(s)
-        shot = repo2.add(session_id=ws_id, captured_at=T0, activity_state=AS.ACTIVE, file_path=str(file_path), file_size=file_path.stat().st_size, checksum="abc")
+        shot = repo2.add(
+            session_id=ws_id,
+            captured_at=T0,
+            activity_state=AS.ACTIVE,
+            file_path=str(file_path),
+            file_size=file_path.stat().st_size,
+            checksum="abc",
+        )
         s.commit()
         shot_id = shot.id
 
@@ -87,7 +111,9 @@ def test_offline_preserves_and_does_not_delete(tmp_path: Path, db: Database) -> 
     ws_id = _make_user_and_session(db)
     with db.session() as s:
         q = SyncQueueRepository(s)
-        item = q.enqueue(entity_type="work_session", entity_id=ws_id, operation="CREATE")
+        item = q.enqueue(
+            entity_type="work_session", entity_id=ws_id, operation="CREATE"
+        )
         s.commit()
         item_id = item.id
 
@@ -108,7 +134,9 @@ def test_retry_backoff_respected(tmp_path: Path, db: Database) -> None:
     ws_id = _make_user_and_session(db)
     with db.session() as s:
         q = SyncQueueRepository(s)
-        item = q.enqueue(entity_type="work_session", entity_id=ws_id, operation="CREATE")
+        item = q.enqueue(
+            entity_type="work_session", entity_id=ws_id, operation="CREATE"
+        )
         s.commit()
         item_id = item.id
 
@@ -139,15 +167,23 @@ def test_stale_recovery_resets_syncing(tmp_path: Path, db: Database) -> None:
     ws_id = _make_user_and_session(db)
     with db.session() as s:
         q = SyncQueueRepository(s)
-        item = q.enqueue(entity_type="work_session", entity_id=ws_id, operation="CREATE")
+        item = q.enqueue(
+            entity_type="work_session", entity_id=ws_id, operation="CREATE"
+        )
         q.mark_sync_started(item.id)
         s.commit()
         # Also screenshot stale
         from app.domain.activity.activity import ActivityState as AS
+
         file_path = tmp_path / "shot.jpg"
         file_path.write_bytes(b"data")
         s_repo = ScreenshotRepository(s)
-        shot = s_repo.add(session_id=ws_id, captured_at=T0, activity_state=AS.ACTIVE, file_path=str(file_path))
+        shot = s_repo.add(
+            session_id=ws_id,
+            captured_at=T0,
+            activity_state=AS.ACTIVE,
+            file_path=str(file_path),
+        )
         s_repo.mark_sync_started(shot.id)
         s.commit()
 
@@ -177,15 +213,20 @@ def test_orphan_queue_removed(tmp_path: Path, db: Database) -> None:
     assert result["orphan_queue_removed"] == 2
     with db.session() as s:
         from sqlalchemy import select
+
         rows = list(s.scalars(select(SyncQueueItem)))
         assert len(rows) == 0
 
 
-def test_failed_preserves_data_never_deletes_on_attempt(tmp_path: Path, db: Database) -> None:
+def test_failed_preserves_data_never_deletes_on_attempt(
+    tmp_path: Path, db: Database
+) -> None:
     ws_id = _make_user_and_session(db)
     with db.session() as s:
         q = SyncQueueRepository(s)
-        item = q.enqueue(entity_type="work_session", entity_id=ws_id, operation="CREATE")
+        item = q.enqueue(
+            entity_type="work_session", entity_id=ws_id, operation="CREATE"
+        )
         s.commit()
         item_id = item.id
 

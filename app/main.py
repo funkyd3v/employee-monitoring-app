@@ -8,6 +8,7 @@ function stays a thin, stable wrapper.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 
 from PySide6.QtWidgets import QApplication
@@ -90,7 +91,11 @@ def main(argv: list[str] | None = None) -> int:
                 pass
             guard = None
 
-    lifecycle.add("single_instance", start=_acquire_single_instance, shutdown=_release_single_instance)
+    lifecycle.add(
+        "single_instance",
+        start=_acquire_single_instance,
+        shutdown=_release_single_instance,
+    )
 
     # Database lifecycle: migrate at start, dispose on shutdown
     # (docs/ARCHITECTURE.md § Application lifecycle).
@@ -182,7 +187,9 @@ def main(argv: list[str] | None = None) -> int:
                 poll_interval_ms=5000,
             )
             supervisor.state_changed.connect(
-                lambda _state: container.session_service.tick()  # keep service state warm
+                lambda _state: (
+                    container.session_service.tick()
+                )  # keep service state warm
             )
             activity_supervisor = supervisor
             supervisor.start()
@@ -245,7 +252,10 @@ def main(argv: list[str] | None = None) -> int:
 
                 if session.status == WorkSessionStatus.WORKING:
                     # Use session start as schedule anchor (drift-resistant)
-                    supervisor.set_schedule(session.started_at, container.screenshot_service.interval_seconds)
+                    supervisor.set_schedule(
+                        session.started_at,
+                        container.screenshot_service.interval_seconds,
+                    )
                 elif session.status == WorkSessionStatus.BREAK:
                     supervisor.pause()
 
@@ -262,7 +272,10 @@ def main(argv: list[str] | None = None) -> int:
                 try:
                     sess = container.session_service.machine.session
                     if sess is not None:
-                        supervisor.set_schedule(sess.started_at, container.screenshot_service.interval_seconds)
+                        supervisor.set_schedule(
+                            sess.started_at,
+                            container.screenshot_service.interval_seconds,
+                        )
                         supervisor.resume()
                 except Exception:
                     pass
@@ -270,26 +283,20 @@ def main(argv: list[str] | None = None) -> int:
 
             def break_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
                 view = orig_take_break(*a, **kw)
-                try:
+                with contextlib.suppress(Exception):
                     supervisor.pause()
-                except Exception:
-                    pass
                 return view
 
             def resume_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
                 view = orig_resume(*a, **kw)
-                try:
+                with contextlib.suppress(Exception):
                     supervisor.resume()
-                except Exception:
-                    pass
                 return view
 
             def checkout_wrapper(*a, **kw):  # type: ignore[no-untyped-def]
                 view = orig_check_out(*a, **kw)
-                try:
+                with contextlib.suppress(Exception):
                     supervisor.pause()
-                except Exception:
-                    pass
                 return view
 
             container.session_service.check_in = check_in_wrapper  # type: ignore[method-assign]
@@ -297,7 +304,10 @@ def main(argv: list[str] | None = None) -> int:
             container.session_service.resume = resume_wrapper  # type: ignore[method-assign]
             container.session_service.check_out = checkout_wrapper  # type: ignore[method-assign]
 
-            logger.info("Screenshot worker started interval=%ss", container.screenshot_service.interval_seconds)
+            logger.info(
+                "Screenshot worker started interval=%ss",
+                container.screenshot_service.interval_seconds,
+            )
         except Exception as exc:
             logger.error("failed to start screenshot worker: %s", exc, exc_info=True)
 
@@ -330,7 +340,9 @@ def main(argv: list[str] | None = None) -> int:
                 shot_orphans = container.screenshot_service.recover_orphans()
             except Exception:
                 shot_orphans = {"orphan_files_removed": 0, "orphan_records_removed": 0}
-                logger.debug("screenshot orphan recovery in sync step failed", exc_info=True)
+                logger.debug(
+                    "screenshot orphan recovery in sync step failed", exc_info=True
+                )
             combined = {**stale, **orphans, **shot_orphans}
             if any(combined.values()):
                 logger.info("Sync recovery: %s", combined)
@@ -436,7 +448,11 @@ def main(argv: list[str] | None = None) -> int:
                     sup = lifecycle.context.get(key)
                     if sup is not None:
                         try:
-                            QMetaObject.invokeMethod(sup.worker, "handle_system_suspend", Qt.ConnectionType.QueuedConnection)  # type: ignore[attr-defined]
+                            QMetaObject.invokeMethod(
+                                sup.worker,  # type: ignore[attr-defined]
+                                "handle_system_suspend",
+                                Qt.ConnectionType.QueuedConnection,
+                            )
                         except Exception:
                             try:
                                 sup.worker.handle_system_suspend()  # type: ignore[attr-defined]
@@ -455,17 +471,19 @@ def main(argv: list[str] | None = None) -> int:
                     sup = lifecycle.context.get(key)
                     if sup is not None:
                         try:
-                            QMetaObject.invokeMethod(sup.worker, "handle_system_resume", Qt.ConnectionType.QueuedConnection)  # type: ignore[attr-defined]
+                            QMetaObject.invokeMethod(
+                                sup.worker,  # type: ignore[attr-defined]
+                                "handle_system_resume",
+                                Qt.ConnectionType.QueuedConnection,
+                            )
                         except Exception:
                             try:
                                 sup.worker.handle_system_resume()  # type: ignore[attr-defined]
                             except Exception:
                                 pass
                 # Also refresh session tick so timer doesn't show gap
-                try:
+                with contextlib.suppress(Exception):
                     container.session_service.tick()
-                except Exception:
-                    pass
 
             mgr.system_suspend.connect(_suspend_workers)  # type: ignore[attr-defined]
             mgr.system_resume.connect(_resume_workers)  # type: ignore[attr-defined]

@@ -202,8 +202,12 @@ class ActivityWorker(QObject):
         self.error_occurred.emit(str(exc))
         # Supervisor: restart with backoff (docs §Threading Discipline)
         self._attempt += 1
-        delay = _RETRY_BACKOFF_SECONDS[min(self._attempt - 1, len(_RETRY_BACKOFF_SECONDS) - 1)]
-        _logger.info("activity worker restart attempt=%s delay=%ss", self._attempt, delay)
+        delay = _RETRY_BACKOFF_SECONDS[
+            min(self._attempt - 1, len(_RETRY_BACKOFF_SECONDS) - 1)
+        ]
+        _logger.info(
+            "activity worker restart attempt=%s delay=%ss", self._attempt, delay
+        )
         self.stop()
         if delay == 0:
             self.start()
@@ -256,7 +260,9 @@ class ActivityWorkerSupervisor(QObject):
             # Invoke stop on worker thread, then quit thread
             from PySide6.QtCore import QMetaObject, Qt
 
-            QMetaObject.invokeMethod(self._worker, "stop", Qt.ConnectionType.QueuedConnection)
+            QMetaObject.invokeMethod(
+                self._worker, "stop", Qt.ConnectionType.QueuedConnection
+            )
             # Give worker a moment to stop gracefully
             time.sleep(0.05)
             self._thread.quit()
@@ -265,12 +271,16 @@ class ActivityWorkerSupervisor(QObject):
     def pause(self) -> None:
         from PySide6.QtCore import QMetaObject, Qt
 
-        QMetaObject.invokeMethod(self._worker, "pause", Qt.ConnectionType.QueuedConnection)
+        QMetaObject.invokeMethod(
+            self._worker, "pause", Qt.ConnectionType.QueuedConnection
+        )
 
     def resume_polling(self) -> None:
         from PySide6.QtCore import QMetaObject, Qt
 
-        QMetaObject.invokeMethod(self._worker, "resume_polling", Qt.ConnectionType.QueuedConnection)
+        QMetaObject.invokeMethod(
+            self._worker, "resume_polling", Qt.ConnectionType.QueuedConnection
+        )
 
     @property
     def worker(self) -> ActivityWorker:

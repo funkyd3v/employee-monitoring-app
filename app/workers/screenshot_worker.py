@@ -8,6 +8,7 @@ Rules (docs/ENGINEERING_RULES.md):
 
 from __future__ import annotations
 
+import contextlib
 import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -91,7 +92,9 @@ class ScreenshotWorker(QObject):
     def set_schedule(self, scheduled_start: object, interval_seconds: object) -> None:
         """(Re)configure the drift schedule — called on Check In / interval change."""
         try:
-            if not isinstance(scheduled_start, datetime) or not isinstance(interval_seconds, int):
+            if not isinstance(scheduled_start, datetime) or not isinstance(
+                interval_seconds, int
+            ):
                 _logger.warning("invalid schedule payload — ignoring")
                 return
             self._scheduled_start = scheduled_start
@@ -147,14 +150,16 @@ class ScreenshotWorker(QObject):
             # Catch-up: if we were suspended long, emit extra slots up to cap
             # by looping while still due (with guard)
             for _ in range(4):  # up to total 5 per scheduling.captures_due cap
-                nxt = next_capture_at(self._scheduled_start, self._interval, self._n + 1)
+                nxt = next_capture_at(
+                    self._scheduled_start, self._interval, self._n + 1
+                )
                 if now >= nxt:
                     self._n += 1
                     try:
                         r = self._service.capture_once(at=now)
                         if r is not None:
                             self.captured.emit(str(r))
-                    except Exception:
+                    except Exception:  # noqa: S110
                         pass
                 else:
                     break
@@ -164,13 +169,15 @@ class ScreenshotWorker(QObject):
 
     def _handle_failure(self, exc: Exception) -> None:
         _logger.error("screenshot worker failure: %s", exc, exc_info=True)
-        try:
+        with contextlib.suppress(Exception):
             self.error_occurred.emit(str(exc))
-        except Exception:
-            pass
         self._attempt += 1
-        delay = _RETRY_BACKOFF_SECONDS[min(self._attempt - 1, len(_RETRY_BACKOFF_SECONDS) - 1)]
-        _logger.info("screenshot worker restart attempt=%s delay=%ss", self._attempt, delay)
+        delay = _RETRY_BACKOFF_SECONDS[
+            min(self._attempt - 1, len(_RETRY_BACKOFF_SECONDS) - 1)
+        ]
+        _logger.info(
+            "screenshot worker restart attempt=%s delay=%ss", self._attempt, delay
+        )
         self.stop()
         if delay == 0:
             self.start()
@@ -210,7 +217,9 @@ class ScreenshotWorkerSupervisor(QObject):
         if self._thread.isRunning():
             from PySide6.QtCore import QMetaObject, Qt
 
-            QMetaObject.invokeMethod(self._worker, "stop", Qt.ConnectionType.QueuedConnection)
+            QMetaObject.invokeMethod(
+                self._worker, "stop", Qt.ConnectionType.QueuedConnection
+            )
             time.sleep(0.05)
             self._thread.quit()
             self._thread.wait(2000)
@@ -218,12 +227,16 @@ class ScreenshotWorkerSupervisor(QObject):
     def pause(self) -> None:
         from PySide6.QtCore import QMetaObject, Qt
 
-        QMetaObject.invokeMethod(self._worker, "pause", Qt.ConnectionType.QueuedConnection)
+        QMetaObject.invokeMethod(
+            self._worker, "pause", Qt.ConnectionType.QueuedConnection
+        )
 
     def resume(self) -> None:
         from PySide6.QtCore import QMetaObject, Qt
 
-        QMetaObject.invokeMethod(self._worker, "resume", Qt.ConnectionType.QueuedConnection)
+        QMetaObject.invokeMethod(
+            self._worker, "resume", Qt.ConnectionType.QueuedConnection
+        )
 
     def set_schedule(self, scheduled_start: datetime, interval_seconds: int) -> None:
         from PySide6.QtCore import QMetaObject, Qt

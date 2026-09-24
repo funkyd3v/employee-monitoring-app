@@ -10,22 +10,48 @@ no backend, no cloud sync, no admin dashboard.
 
 ## Status
 
-Phase 1 (architecture & project setup) — scaffold, config system, logging
-with secret redaction, lifecycle management, DI container skeleton. See
-`docs/TESTING_AND_DOD.md` § Indicative timeline for the full plan.
+Phases 1–10 complete (Phase 10: packaging & QA). See `docs/TESTING_AND_DOD.md` § Indicative timeline for the full plan.
 
 ## Getting started (development)
 
 Requirements: Python 3.12+ and `uv` (or `pip`).
 
 ```bash
-uv sync --group dev   # or: python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/ruff check app tests
+uv sync --group dev
+.venv/bin/ruff check app tests        # lint (ruff)
 .venv/bin/ruff format --check app tests
-.venv/bin/mypy app
-.venv/bin/pytest
+.venv/bin/mypy app                     # types (strict)
+.venv/bin/pytest -q
 .venv/bin/employee-monitoring-agent --version
 ```
+
+## Building a fully self-contained Windows bundle (Phase 10)
+
+No Python, SQLite, or external runtime is required on the target machine — the bundle embeds the interpreter, stdlib (`_sqlite3`), PySide6/Qt6, SQLAlchemy, Pillow, mss, keyring, APScheduler, httpx and the Windows backends (`pywin32`, `pynput` when built on Windows).
+
+**On Windows (required for the real artefact; Linux can only do a dry smoke):**
+
+```powershell
+uv sync --group dev
+uv run pyinstaller installer/build.spec --noconfirm --clean
+# -> dist/EmployeeMonitoring/EmployeeMonitoring.exe  (onedir, windowed, no console)
+
+# Optional: build the per-user installer (Inno Setup 6 required, iscc on PATH)
+iscc installer/installer.iss
+# -> installer/dist/EmployeeMonitoring-Setup-0.1.0.exe
+
+# Install and smoke-test
+installer\dist\EmployeeMonitoring-Setup-0.1.0.exe  /SILENT
+powershell -ExecutionPolicy Bypass -File scripts/smoke_test.ps1
+```
+
+Details: `installer/build.spec` (`--onedir` per `docs/TECH_STACK.md:17`, `UPX=False` to avoid AV churn per `docs/SECURITY_PRIVACY.md:59`) and `installer/installer.iss` (per-user `PrivilegesRequired=lowest`, `HKCU\...\Run` autostart `--minimized`, Start Menu icon, close-apps on upgrade).
+
+**Code signing (Authenticode):** unsigned dev builds show a SmartScreen warning — expected. For a signed build set `SignTool` in `installer.iss` and pass `/Ssigntool="signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f cert.pfx /p pass $f"` on the `iscc` command line (see `installer/installer.iss` header).
+
+**Uninstall & data retention:** the installer never deletes `%LOCALAPPDATA%\EmployeeMonitoring` (DB `agent.db`, `screenshots/{pending,processing}`, `logs/agent.log`). Apps & Features removes only `{app}`; delete the data folder manually for a full wipe — the installer tells the user where it is (`docs/DATA_MODEL.md` layout).
+
+**Placeholder icon:** `assets/icons/app.ico` (gradient `6366F1→8B5CF6`, `docs/UI_SPEC.md:130`) is used for the exe and installer until replaced with a final brand asset.
 
 Windows-only runtime dependencies (`pynput`, `pywin32`) are gated behind
 `sys_platform == "win32"` markers so development and non-UI tests run on

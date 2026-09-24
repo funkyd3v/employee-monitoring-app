@@ -26,9 +26,13 @@ htmlcov/
 .vscode/
 *.swp
 
-# PyInstaller / installer artifacts
+# PyInstaller / installer artifacts (keep .log/.spec, ignore outputs)
+build/
+dist/
 installer/build/
-installer/dist/*.exe
+installer/dist/
+!installer/build.spec
+!installer/installer.iss
 
 # Local agent data (never commit real monitoring data)
 *.db

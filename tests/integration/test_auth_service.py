@@ -39,7 +39,7 @@ class ThrowingStore:
 
     backend = "broken"
 
-    def save(self, token: str) -> None:  # noqa: ARG002
+    def save(self, token: str) -> None:
         raise CredentialStoreUnavailableError("credential manager unreachable")
 
     def load(self) -> None:

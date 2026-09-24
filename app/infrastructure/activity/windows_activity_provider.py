@@ -78,7 +78,9 @@ class WindowsActivityProvider(ActivityProvider):
                 return
             self._running = True
         self._start_listeners()
-        _logger.info("Windows activity provider started (hooks=%s)", self._has_listeners())
+        _logger.info(
+            "Windows activity provider started (hooks=%s)", self._has_listeners()
+        )
 
     def stop(self) -> None:
         with self._lock:
@@ -133,7 +135,9 @@ class WindowsActivityProvider(ActivityProvider):
             self._mouse_listener = m_listener
             _logger.debug("pynput listeners started")
         except Exception:
-            _logger.warning("failed to start pynput listeners — fallback to Win32", exc_info=True)
+            _logger.warning(
+                "failed to start pynput listeners — fallback to Win32", exc_info=True
+            )
             self._keyboard_listener = None
             self._mouse_listener = None
 

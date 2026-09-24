@@ -30,7 +30,9 @@ def install_global_handlers() -> None:
     # ── sys.excepthook (main thread) ────────────────────────────────────
     _orig_excepthook = sys.excepthook
 
-    def _excepthook(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
+    def _excepthook(
+        exc_type: type[BaseException], exc: BaseException, tb: object
+    ) -> None:
         # KeyboardInterrupt / SystemExit are intentional — don't log as crash
         if issubclass(exc_type, (KeyboardInterrupt, SystemExit)):
             _orig_excepthook(exc_type, exc, tb)
@@ -123,7 +125,9 @@ def verify_database(db_path: Path, *, quarantine_dir: Path | None = None) -> boo
         finally:
             conn.close()
     except Exception as exc:
-        _logger.warning("integrity check raised for %s: %s", db_path, exc, exc_info=True)
+        _logger.warning(
+            "integrity check raised for %s: %s", db_path, exc, exc_info=True
+        )
         # Treat check failure as corruption — quarantine.
         ok = False
 
@@ -146,7 +150,9 @@ def _quarantine(db_path: Path, quarantine_dir: Path | None) -> None:
         db_path.rename(dest)
         _logger.critical("quarantined corrupt database %s -> %s", db_path, dest)
     except Exception as exc:
-        _logger.error("failed to quarantine corrupt DB %s: %s", db_path, exc, exc_info=True)
+        _logger.error(
+            "failed to quarantine corrupt DB %s: %s", db_path, exc, exc_info=True
+        )
         # Fallback: try to remove so next migrate can recreate
         try:
             db_path.unlink(missing_ok=True)

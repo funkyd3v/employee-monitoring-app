@@ -25,6 +25,7 @@ dev = [
     "pytest-qt>=4.4",
     "ruff>=0.8",
     "mypy>=1.11",
+    "pyinstaller>=6.0",
 ]
 
 [project.scripts]
@@ -67,17 +68,29 @@ select = [
 ignore = [
     "COM812",  # trailing commas handled by formatter
     "S101",    # assert is fine in this codebase
+    "E501",    # line length — formatter + per-file where strictness matters
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
     "S105", # hardcoded password (dummy dev credentials)
     "S106", # hardcoded password argument (dummy dev credentials)
+    "E501", # test file names regularly exceed 88
+    "ARG001", # fixtures like tmp_path intentionally unused in some tests
+    "ARG002",
+    "N817",
+    "S108",
 ]
-"app/infrastructure/system/**" = ["E501", "N806", "F841", "SIM105", "S110", "ARG001", "TC003", "RUF100"]
-"app/main.py" = ["E501", "RUF100"]
-"app/core/logging.py" = ["E501", "B009", "RUF100"]
+"app/infrastructure/system/**" = ["N802", "N806", "F841", "SIM105", "S110", "ARG001", "TC003", "RUF100"]
+"app/main.py" = ["RUF100", "SIM105", "S110", "N814"]
+"app/core/logging.py" = ["B009", "RUF100"]
 "app/core/container.py" = ["N814", "RUF100"]
+"app/services/**" = ["SIM105", "S110", "F841", "ARG002"]
+"app/domain/screenshots/**" = ["TC002", "TC003", "RUF002"]
+"app/infrastructure/screenshots/**" = ["TC002", "TC003", "RUF002"]
+"app/infrastructure/activity/**" = ["RUF100"]
+"app/ui/**" = ["E402", "RUF100"]
+"app/workers/**" = ["RUF100"]
 
 [tool.ruff.format]
 

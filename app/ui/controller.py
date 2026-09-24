@@ -209,7 +209,11 @@ class UiController(QObject):
     def _refresh_activity_view(self) -> None:
         if not self.dashboard.isVisible():
             return
-        if self._sessions.state not in (AppState.WORKING, AppState.BREAK, AppState.COMPLETED):
+        if self._sessions.state not in (
+            AppState.WORKING,
+            AppState.BREAK,
+            AppState.COMPLETED,
+        ):
             return
         view = self._sessions.tick()
         self.dashboard.set_view(view)

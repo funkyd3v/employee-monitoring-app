@@ -51,7 +51,7 @@ def test_shutdown_runs_in_reverse_order() -> None:
 def test_failed_startup_unwinds_started_steps() -> None:
     log: list[str] = []
 
-    def explode(ctx: LifecycleContext) -> None:  # noqa: ARG001
+    def explode(ctx: LifecycleContext) -> None:
         raise RuntimeError("boom")
 
     lc = Lifecycle()
@@ -70,7 +70,7 @@ def test_failed_startup_unwinds_started_steps() -> None:
 def test_shutdown_is_best_effort() -> None:
     log: list[str] = []
 
-    def bad_shutdown(ctx: LifecycleContext) -> None:  # noqa: ARG001
+    def bad_shutdown(ctx: LifecycleContext) -> None:
         raise RuntimeError("teardown failed")
 
     lc = Lifecycle()

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image as PILImage
 from PIL import ImageOps
-from PIL.Image import Image
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from PIL.Image import Image
 
 # Red border for idle captures (docs/ENGINEERING_RULES.md, docs/UI_SPEC.md Danger)
 IDLE_BORDER_COLOR = "#EF4444"

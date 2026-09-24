@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.config.settings import AppSettings, LocalConfig, ServerPolicy
 from app.core.container import Container
@@ -12,11 +12,16 @@ from app.domain.sync.provider import ConnectivityState
 from app.domain.sync.sync import SyncStatus
 from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
-from app.infrastructure.database.models import ScreenshotMetadata, SyncQueueItem
-from app.infrastructure.database.repositories import ScreenshotRepository, SyncQueueRepository
+from app.infrastructure.database.models import SyncQueueItem
+from app.infrastructure.database.repositories import (
+    ScreenshotRepository,
+    SyncQueueRepository,
+)
 from app.infrastructure.network.sync_adapter import DummySyncProvider
-from app.services.cleanup_service import CleanupService
 from app.services.sync_service import SyncService
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 T0 = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
 
@@ -49,6 +54,7 @@ def test_offline_queue_preserved_and_synced_after_online(tmp_path: Path) -> None
 
         with container.database.session() as s:
             from sqlalchemy import select
+
             rows = list(s.scalars(select(SyncQueueItem)))
             assert len(rows) >= 1
 
@@ -73,7 +79,7 @@ def test_screenshot_offline_queue_and_cleanup(tmp_path: Path) -> None:
     try:
         container.auth_service.login("employee@example.com", "secret")
         container.session_service.set_user(container.auth_service.current_user_id())
-        view = container.session_service.check_in()
+        container.session_service.check_in()
         session_id = container.session_service.machine.session.id  # type: ignore[union-attr]
         assert session_id is not None
 
@@ -85,18 +91,31 @@ def test_screenshot_offline_queue_and_cleanup(tmp_path: Path) -> None:
         # Instead manually insert screenshot row to simulate capture
         from app.infrastructure.database.repositories import ScreenshotRepository
 
-        file_path = container.settings.data_dir / "screenshots" / "pending" / "test_shot.jpg"
+        file_path = (
+            container.settings.data_dir / "screenshots" / "pending" / "test_shot.jpg"
+        )
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_bytes(b"fake-image-data" * 100)
 
         with container.database.session() as s:
             repo = ScreenshotRepository(s)
-            shot = repo.add(session_id=session_id, captured_at=T0, activity_state=ActivityState.ACTIVE, file_path=str(file_path), file_size=file_path.stat().st_size, checksum="abc")
-            from app.infrastructure.database.repositories import SyncQueueRepository
+            shot = repo.add(
+                session_id=session_id,
+                captured_at=T0,
+                activity_state=ActivityState.ACTIVE,
+                file_path=str(file_path),
+                file_size=file_path.stat().st_size,
+                checksum="abc",
+            )
             from app.domain.sync.sync import SyncEntityType, SyncOperation
+            from app.infrastructure.database.repositories import SyncQueueRepository
 
             q_repo = SyncQueueRepository(s)
-            q_repo.enqueue(entity_type=SyncEntityType.SCREENSHOT.value, entity_id=shot.id, operation=SyncOperation.CREATE.value)
+            q_repo.enqueue(
+                entity_type=SyncEntityType.SCREENSHOT.value,
+                entity_id=shot.id,
+                operation=SyncOperation.CREATE.value,
+            )
             s.commit()
 
         # Sync offline -> no delete, file preserved
@@ -125,7 +144,9 @@ def test_recovery_of_stale_syncing(tmp_path: Path) -> None:
         # Create queue item and mark SYNCING (crash left)
         with db.session() as s:
             q = SyncQueueRepository(s)
-            item = q.enqueue(entity_type="work_session", entity_id=1, operation="CREATE")
+            item = q.enqueue(
+                entity_type="work_session", entity_id=1, operation="CREATE"
+            )
             q.mark_sync_started(item.id)
             s.commit()
 
@@ -134,7 +155,18 @@ def test_recovery_of_stale_syncing(tmp_path: Path) -> None:
         # Before recovery, sync would see no pending (only SYNCING)
         with db.session() as s:
             assert len(SyncQueueRepository(s).pending_batch(limit=10)) == 0
-            assert len(list(s.scalars(__import__("sqlalchemy").select(SyncQueueItem).where(SyncQueueItem.status == SyncStatus.SYNCING.value)))) == 1
+            assert (
+                len(
+                    list(
+                        s.scalars(
+                            __import__("sqlalchemy")
+                            .select(SyncQueueItem)
+                            .where(SyncQueueItem.status == SyncStatus.SYNCING.value)
+                        )
+                    )
+                )
+                == 1
+            )
 
         svc.recover_stale()
         # After recovery, pendingBatch should find it
@@ -158,10 +190,17 @@ def test_orphan_file_record_recovery(tmp_path: Path) -> None:
         orphan.write_bytes(b"orphan-data")
 
         # Orphan record: DB row but file missing
-        missing_path = container.settings.data_dir / "screenshots" / "pending" / "missing.jpg"
+        missing_path = (
+            container.settings.data_dir / "screenshots" / "pending" / "missing.jpg"
+        )
         with container.database.session() as s:
             repo = ScreenshotRepository(s)
-            repo.add(session_id=session_id, captured_at=T0, activity_state=ActivityState.ACTIVE, file_path=str(missing_path))
+            repo.add(
+                session_id=session_id,
+                captured_at=T0,
+                activity_state=ActivityState.ACTIVE,
+                file_path=str(missing_path),
+            )
             s.commit()
 
         # Run screenshot orphan recovery
