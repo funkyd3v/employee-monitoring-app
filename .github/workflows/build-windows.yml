@@ -43,14 +43,12 @@ jobs:
           dir dist\EmployeeMonitoring
           if (!(Test-Path "dist\EmployeeMonitoring\EmployeeMonitoring.exe")) { throw "EXE not found" }
 
-      - name: Install Inno Setup 6
+      - name: Build installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
         with:
-          cache: true
-
-      - name: Build installer (optional, remove if you only want the .exe folder)
-        run: iscc installer/installer.iss
-        # To pass version from git tag: iscc /DMyAppVersion=${{ github.ref_name }} installer/installer.iss
+          path: installer/installer.iss
+        # To pass version from git tag, use:
+        #   options: /DMyAppVersion=${{ github.ref_name }}
 
       # Code signing (Authenticode) — uncomment when you have a cert:
       # - name: Build signed installer
