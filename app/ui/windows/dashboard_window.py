@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
 from app.domain.activity.activity import ActivityState
 from app.domain.sessions.state_machine import AppState
 from app.ui.dialogs.confirm_dialog import ConfirmDialog
-from app.ui.theme.tokens import DARK
+from app.ui.theme.tokens import ACTIVE_PALETTE
 from app.ui.windows.base_window import FramelessWindow
 from app.ui.windows.components import StatusPill, TimerWidget
 from app.ui.windows.components.status_pill import PillState
@@ -107,8 +107,8 @@ class _Avatar(QToolButton):
 
         circle = self.rect().adjusted(2, 3, -46, -3)
         gradient = QLinearGradient(circle.topLeft(), circle.bottomRight())
-        gradient.setColorAt(0.0, QColor(DARK.accent))
-        gradient.setColorAt(1.0, QColor(DARK.accent_end))
+        gradient.setColorAt(0.0, QColor(ACTIVE_PALETTE.accent))
+        gradient.setColorAt(1.0, QColor(ACTIVE_PALETTE.accent_end))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(gradient)
         painter.drawEllipse(circle)
@@ -123,7 +123,7 @@ class _Avatar(QToolButton):
         chevron = QFont("Inter")
         chevron.setPixelSize(12)
         painter.setFont(chevron)
-        painter.setPen(QPen(QColor(DARK.text_secondary)))
+        painter.setPen(QPen(QColor(ACTIVE_PALETTE.text_secondary)))
         painter.drawText(QPoint(self.width() - 16, self.height() // 2 + 4), "\u25be")
         painter.end()
 

@@ -10,7 +10,7 @@
 ;
 ; Per-user install (no admin) — data lives in %LOCALAPPDATA%\EmployeeMonitoring\*.
 ; Install dir != data dir (docs/DATA_MODEL.md §Storage layout). Uninstaller
-; never deletes the data dir; the user is told where it lives.
+; deletes both the install dir and the local data dir (full cleanup on uninstall).
 ;
 ; Code signing (Authenticode):
 ;   Uncomment SignTool lines and set SIGNTOOL env / define SIGNTOOL_PFX.
@@ -83,9 +83,9 @@ Source: "..\dist\EmployeeMonitoring\*"; DestDir: "{app}"; Flags: ignoreversion r
 Source: "..\assets\icons\app.ico"; DestDir: "{app}\assets\icons"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Comment: "Employee monitoring app"
 Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"; Comment: "Employee monitoring app"
 
 [Registry]
 ; Autostart — per-user Run key, launched minimized to tray (app/main.py --minimized).
@@ -98,9 +98,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent unchecked
 
 [UninstallDelete]
-; DO NOT delete %LOCALAPPDATA%\EmployeeMonitoring — user data, screenshots, DB.
-; The uninstaller purposely leaves it behind and the final page tells the user where it is.
-; If the user wants a full wipe they delete that folder manually (documented in README/data-retention).
+; Remove all local data on uninstall (DB, screenshots, logs) — full cleanup.
+Type: filesandordirs; Name: "{localappdata}\EmployeeMonitoring"
 
 [Code]
 var
@@ -119,8 +118,7 @@ begin
     'Where your monitoring data is stored',
     'Your work sessions, screenshots, and logs are stored per-user and are NOT inside the install folder:'#13#10 +
     ExpandConstant('{localappdata}\EmployeeMonitoring\') + #13#10#13#10 +
-    'This folder is kept when you uninstall. Delete it manually if you want a full wipe. '#13#10 +
-    'See README “Uninstall & data retention”.'
+    'This folder is removed automatically when you uninstall the application.'
   );
 end;
 
@@ -137,12 +135,9 @@ begin
   if CurUninstallStep = usPostUninstall then
   begin
     DataDir := ExpandConstant('{localappdata}\EmployeeMonitoring');
-    // Intentionally do not delete DataDir. Show where it lives.
-    MsgBox(
-      'Employee Monitoring has been uninstalled.' + #13#10#13#10 +
-      'Your local data was kept at:'#13#10 + DataDir + #13#10#13#10 +
-      'Delete that folder manually if you want to remove all local history.',
-      mbInformation, MB_OK
-    );
+    // Best-effort delete — [UninstallDelete] already handles this, but DelTree
+    // covers cases where files are locked or the section was skipped.
+    if DirExists(DataDir) then
+      DelTree(DataDir, True, True, True);
   end;
 end;

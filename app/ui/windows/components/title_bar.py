@@ -10,16 +10,12 @@ maximize/expand affordance anywhere in the UI (product rule #8). Close is
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtGui import QMouseEvent  # noqa: TC002 — needed at runtime
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from app.config.constants import APP_NAME
 from app.ui.windows.components.brand_mark import BrandMark
-
-if TYPE_CHECKING:
-    from PySide6.QtGui import QMouseEvent
 
 
 class TitleBar(QWidget):
@@ -32,6 +28,7 @@ class TitleBar(QWidget):
         super().__init__(parent)
         self.setObjectName("TitleBar")
         self.setFixedHeight(46)
+        self._drag_pos: QPoint | None = None
 
         self._brand = BrandMark(22)
         self._brand.setToolTip(APP_NAME)
@@ -74,6 +71,40 @@ class TitleBar(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
             window = self.window()
-            if hasattr(window, "startSystemMove"):
-                window.startSystemMove()
+            # Prefer native system move (smooth, respects OS snapping).
+            handle = None
+            try:
+                handle = window.windowHandle()  # type: ignore[union-attr]
+            except Exception:
+                handle = None
+            if handle is not None:
+                try:
+                    if handle.startSystemMove():
+                        event.accept()
+                        return
+                except Exception:
+                    pass
+            # Fallback: manual offset tracking (works even before handle exists).
+            try:
+                self._drag_pos = event.globalPosition().toPoint() - window.frameGeometry().topLeft()
+            except Exception:
+                self._drag_pos = event.globalPos() - window.frameGeometry().topLeft()  # type: ignore[attr-defined]
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if event.buttons() & Qt.MouseButton.LeftButton and self._drag_pos is not None:
+            window = self.window()
+            try:
+                new_pos = event.globalPosition().toPoint() - self._drag_pos
+            except Exception:
+                new_pos = event.globalPos() - self._drag_pos  # type: ignore[attr-defined]
+            window.move(new_pos)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        self._drag_pos = None
+        super().mouseReleaseEvent(event)

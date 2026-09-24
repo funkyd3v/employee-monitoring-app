@@ -76,7 +76,26 @@ DARK: Palette = Palette(
     scrim="rgba(6, 7, 10, 0.55)",
 )
 
-ACTIVE_PALETTE: Palette = DARK
+LIGHT: Palette = Palette(
+    background="#F7F7F8",
+    surface="#FFFFFF",
+    elevated="#FFFFFF",
+    text_primary="#111827",
+    text_secondary="#6B7280",
+    border="#E5E7EB",
+    accent="#6366F1",
+    accent_end="#8B5CF6",
+    success="#16A34A",
+    warning="#D97706",
+    danger="#DC2626",
+    accent_soft="rgba(99, 102, 241, 0.08)",
+    success_soft="rgba(22, 163, 74, 0.10)",
+    warning_soft="rgba(217, 119, 6, 0.10)",
+    danger_soft="rgba(220, 38, 38, 0.08)",
+    scrim="rgba(15, 17, 21, 0.32)",
+)
+
+ACTIVE_PALETTE: Palette = LIGHT
 
 
 def with_palette(palette: Palette, **overrides: str) -> Palette:

@@ -22,7 +22,7 @@ _logger = get_logger("ui.tray")
 from app.config.constants import APP_NAME
 from app.domain.sessions.state_machine import AppState
 from app.services.session_service import SessionView
-from app.ui.theme.tokens import DARK
+from app.ui.theme.tokens import ACTIVE_PALETTE
 
 
 class TrayState(StrEnum):
@@ -54,10 +54,10 @@ def _paint_tray_icon(state: TrayState) -> QPixmap:
 
     center = 32
     colors = {
-        TrayState.CHECKED_IN: DARK.success,
-        TrayState.ON_BREAK: DARK.warning,
-        TrayState.CHECKED_OUT: DARK.text_secondary,
-        TrayState.ATTENTION: DARK.danger,
+        TrayState.CHECKED_IN: ACTIVE_PALETTE.success,
+        TrayState.ON_BREAK: ACTIVE_PALETTE.warning,
+        TrayState.CHECKED_OUT: ACTIVE_PALETTE.text_secondary,
+        TrayState.ATTENTION: ACTIVE_PALETTE.danger,
     }
     color = QColor(colors[state])
 

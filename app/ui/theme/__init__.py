@@ -1,17 +1,16 @@
 """Theme application: wire design tokens into a running QApplication.
 
-Phase 4 ships the dark palette (docs/TESTING_AND_DOD.md, Phase 4 deliverable
-"Dark theme + design tokens"). Components and windows never reference colors
-directly — they select styling through object names / dynamic properties
-defined in :mod:`app.ui.theme.dark_theme`; swapping the palette is a single
-call here.
+Light theme is the only supported palette (dark theme removed per product
+request). Components and windows never reference colors directly — they select
+styling through object names / dynamic properties defined in
+:mod:`app.ui.theme.light_theme`; swapping the palette is a single call here.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.ui.theme import dark_theme
+from app.ui.theme import light_theme
 from app.ui.theme.tokens import FONT_FAMILY, FONT_MONO, Palette
 
 if TYPE_CHECKING:
@@ -55,14 +54,14 @@ def mono_font() -> QFont:
 def apply_theme(app: QApplication, palette: Palette | None = None) -> None:
     """Apply the stylesheet + default fonts to ``app``.
 
-    ``palette`` overrides the active palette (tests / future light theme).
-    Styling is selected via object names and dynamic properties, so
-    re-applying is cheap and safe.
+    ``palette`` overrides the active palette (tests can still inject a
+    custom palette). Styling is selected via object names and dynamic
+    properties, so re-applying is cheap and safe.
     """
     from app.ui.theme.tokens import ACTIVE_PALETTE
 
     chosen = palette or ACTIVE_PALETTE
-    app.setStyleSheet(dark_theme.build_dark_stylesheet(chosen))
+    app.setStyleSheet(light_theme.build_light_stylesheet(chosen))
     app.setFont(ui_font())
 
 

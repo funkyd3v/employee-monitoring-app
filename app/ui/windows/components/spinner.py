@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from app.ui.theme.tokens import DARK
+from app.ui.theme.tokens import ACTIVE_PALETTE
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QPaintEvent
@@ -30,7 +30,7 @@ class Spinner(QWidget):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._color = QColor(color) if color else QColor(DARK.accent)
+        self._color = QColor(color) if color else QColor(ACTIVE_PALETTE.accent)
         self._angle = 0
         self.setFixedSize(size, size)
         self.setHidden(True)

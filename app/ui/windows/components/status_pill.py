@@ -14,7 +14,7 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QHBoxLayout, QLabel, QWidget
 
-from app.ui.theme.tokens import DARK
+from app.ui.theme.tokens import ACTIVE_PALETTE
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QPaintEvent
@@ -62,10 +62,10 @@ class _Dot(QWidget):
 
 def _state_color(state: PillState) -> QColor:
     if state is PillState.ACTIVE:
-        return QColor(DARK.success)
+        return QColor(ACTIVE_PALETTE.success)
     if state is PillState.IDLE:
-        return QColor(DARK.warning)
-    return QColor(DARK.text_secondary)
+        return QColor(ACTIVE_PALETTE.warning)
+    return QColor(ACTIVE_PALETTE.text_secondary)
 
 
 class StatusPill(QWidget):

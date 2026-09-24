@@ -14,7 +14,7 @@ from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
 
 from app.config.constants import APP_NAME_SHORT
-from app.ui.theme.tokens import DARK
+from app.ui.theme.tokens import ACTIVE_PALETTE
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QPaintEvent
@@ -43,15 +43,15 @@ class BrandMark(QWidget):
         rect = self.rect().adjusted(0, 0, -1, -1)
 
         gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        gradient.setColorAt(0.0, QColor(DARK.accent))
-        gradient.setColorAt(1.0, QColor(DARK.accent_end))
+        gradient.setColorAt(0.0, QColor(ACTIVE_PALETTE.accent))
+        gradient.setColorAt(1.0, QColor(ACTIVE_PALETTE.accent_end))
 
         path = QPainterPath()
         path.addRoundedRect(rect, rect.height() / 3, rect.height() / 3)
         painter.fillPath(path, gradient)
 
         painter.setPen(
-            QPen(QColor(DARK.accent_end).darker(140), 1, Qt.PenStyle.SolidLine)
+            QPen(QColor(ACTIVE_PALETTE.accent_end).darker(140), 1, Qt.PenStyle.SolidLine)
         )
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
