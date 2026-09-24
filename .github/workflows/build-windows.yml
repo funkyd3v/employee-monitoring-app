@@ -1,0 +1,90 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]          # e.g. v0.1.0 -> creates GitHub Release
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write         # needed for softprops/action-gh-release on tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv + Python 3.12
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      # Optional: gate the build — remove if you want build even when lint fails
+      - name: Lint / typecheck / tests (Windows providers installed)
+        run: |
+          uv run ruff check app tests
+          uv run mypy app
+          uv run pytest -q --ignore=tests --deselect="integration" -k "not ui" 2>&1 | head -n 100
+        # Non-Windows extras like pynput/pywin32 are only installed on Windows
+        # because pyproject.toml gates them with sys_platform == "win32"
+
+      - name: Build EXE (PyInstaller --onedir, windowed)
+        run: uv run pyinstaller installer/build.spec --noconfirm --clean
+
+      - name: Verify bundle
+        run: |
+          dir dist\EmployeeMonitoring
+          if (!(Test-Path "dist\EmployeeMonitoring\EmployeeMonitoring.exe")) { throw "EXE not found" }
+
+      - name: Install Inno Setup 6
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+        with:
+          cache: true
+
+      - name: Build installer (optional, remove if you only want the .exe folder)
+        run: iscc installer/installer.iss
+        # To pass version from git tag: iscc /DMyAppVersion=${{ github.ref_name }} installer/installer.iss
+
+      # Code signing (Authenticode) — uncomment when you have a cert:
+      # - name: Build signed installer
+      #   env:
+      #     PFX_B64: ${{ secrets.WINDOWS_PFX_B64 }}
+      #     PFX_PASS: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+      #   run: |
+      #     [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:PFX_B64))
+      #     iscc /Ssigntool="signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f cert.pfx /p $env:PFX_PASS `$f" installer/installer.iss
+
+      - name: Upload EXE bundle (onedir folder)
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmployeeMonitoring-onedir-${{ github.sha }}
+          path: dist/EmployeeMonitoring/
+          if-no-files-found: error
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmployeeMonitoring-Setup-${{ github.sha }}
+          path: installer/dist/*.exe
+          if-no-files-found: warn
+
+      # Auto-release on tag push (v*): attaches installer + zipped onedir
+      - name: Zip onedir for Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: Compress-Archive -Path dist\EmployeeMonitoring -DestinationPath EmployeeMonitoring-${{ github.ref_name }}-windows.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/dist/*.exe
+            EmployeeMonitoring-${{ github.ref_name }}-windows.zip
+          generate_release_notes: true
