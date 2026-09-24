@@ -70,6 +70,19 @@ class Container:
         """Migrate the schema to the current version at startup."""
         version = migrate(self.database.engine)
         self.logger.info("database ready (schema v%s)", version)
+        self._inject_persistence()
+
+    def _inject_persistence(self) -> None:
+        """Wire SessionRepository to SessionService (Phase 5 persistence)."""
+        import contextlib
+
+        # SessionService now only needs the factory; it creates short-lived
+        # repositories per transaction. Passing a repo bound to a closed session
+        # would be detached — don't do that.
+        self.session_service.set_session_factory(self.database.session)
+        # keep old dual-arg shim working for any external callers
+        with contextlib.suppress(Exception):
+            self.session_service.set_persistence(session_factory=self.database.session)
 
     def close_database(self) -> None:
         self.database.dispose()

@@ -69,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("No saved session — awaiting login.")
         else:
             logger.info("Authentication restored for %s", user.email)
+            # Bind the restored user to the session engine so tick/restore
+            # derive elapsed time from persisted timestamps.
+            uid = container.auth_service.current_user_id()
+            container.session_service.set_user(uid)
         lifecycle.context.set("auth_user", user)
 
     def _close_auth(_ctx: LifecycleContext) -> None:
@@ -76,7 +80,19 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle.add("auth", start=_restore_auth, shutdown=_close_auth)
 
-    # UI: owns the windows + tray, pumps the event loop until Exit (tray).
+    # Session restore: after auth restore, before the UI starts.
+    # Requires the user_id to be bound (see _restore_auth above).
+    def _restore_session(_ctx: LifecycleContext) -> None:
+        # Ensure user_id is bound even if auth restore was skipped in tests
+        uid = container.auth_service.current_user_id()
+        if uid is not None:
+            container.session_service.set_user(uid)
+        if container.session_service.restore_session():
+            logger.info("Session restored successfully.")
+        else:
+            logger.info("No persisted session to restore.")
+
+    lifecycle.add("session", start=_restore_session)
     ui = ui_controller.UiController(container, app)
 
     def _start_ui(_ctx: LifecycleContext) -> None:
