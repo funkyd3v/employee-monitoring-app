@@ -312,6 +312,20 @@ class ScreenshotRepository:
             )
         )
 
+    def pending_with_failed_batch(self, *, limit: int) -> list[ScreenshotMetadata]:
+        return list(
+            self._session.scalars(
+                select(ScreenshotMetadata)
+                .where(
+                    ScreenshotMetadata.sync_status.in_(
+                        [SyncStatus.PENDING.value, SyncStatus.FAILED.value]
+                    )
+                )
+                .order_by(ScreenshotMetadata.created_at.asc())
+                .limit(limit)
+            )
+        )
+
     def record_attempt(self, screenshot_id: int, *, at: datetime) -> None:
         row = self.get_by_id(screenshot_id)
         if row is not None:
@@ -337,6 +351,36 @@ class ScreenshotRepository:
             row.sync_status = SyncStatus.SYNCED.value
             row.synced_at = synced_at
             self._session.flush()
+
+    def reset_stale_syncing(self) -> int:
+        """Reset crash-left SYNCING rows to PENDING (startup recovery)."""
+        rows = list(
+            self._session.scalars(
+                select(ScreenshotMetadata).where(
+                    ScreenshotMetadata.sync_status == SyncStatus.SYNCING.value
+                )
+            )
+        )
+        for row in rows:
+            row.sync_status = SyncStatus.PENDING.value
+        self._session.flush()
+        return len(rows)
+
+    def synced_batch(self, *, limit: int = 100) -> list[ScreenshotMetadata]:
+        return list(
+            self._session.scalars(
+                select(ScreenshotMetadata)
+                .where(ScreenshotMetadata.sync_status == SyncStatus.SYNCED.value)
+                .order_by(ScreenshotMetadata.synced_at.asc())
+                .limit(limit)
+            )
+        )
+
+    def delete(self, screenshot_id: int) -> None:
+        self._session.execute(
+            delete(ScreenshotMetadata).where(ScreenshotMetadata.id == screenshot_id)
+        )
+        self._session.flush()
 
 
 class SyncQueueRepository:
@@ -405,6 +449,30 @@ class SyncQueueRepository:
         """Delete an outbox row *only after* server confirms persistence."""
         self._session.execute(delete(SyncQueueItem).where(SyncQueueItem.id == queue_id))
         self._session.flush()
+
+    def reset_stale_syncing(self) -> int:
+        """Reset crash-left SYNCING rows to PENDING."""
+        rows = list(
+            self._session.scalars(
+                select(SyncQueueItem).where(
+                    SyncQueueItem.status == SyncStatus.SYNCING.value
+                )
+            )
+        )
+        for row in rows:
+            row.status = SyncStatus.PENDING.value
+        self._session.flush()
+        return len(rows)
+
+    def synced_batch(self, *, limit: int = 100) -> list[SyncQueueItem]:
+        return list(
+            self._session.scalars(
+                select(SyncQueueItem)
+                .where(SyncQueueItem.status == SyncStatus.SYNCED.value)
+                .order_by(SyncQueueItem.created_at.asc())
+                .limit(limit)
+            )
+        )
 
 
 class SettingsRepository:
