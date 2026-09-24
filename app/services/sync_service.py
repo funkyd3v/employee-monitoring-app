@@ -118,9 +118,6 @@ class SyncService:
             with self._session_factory() as db:
                 from sqlalchemy import select
 
-                from app.infrastructure.database.repositories import SyncQueueRepository
-
-                q_repo = SyncQueueRepository(db)
                 items = list(db.scalars(select(SyncQueueItem)))
                 for item in items:
                     exists = True
@@ -130,11 +127,15 @@ class SyncService:
                         elif item.entity_type == "break":
                             exists = db.get(BreakRecord, item.entity_id) is not None
                         elif item.entity_type == "activity_period":
-                            exists = db.get(ActivityPeriodRecord, item.entity_id) is not None
+                            exists = (
+                                db.get(ActivityPeriodRecord, item.entity_id) is not None
+                            )
                         elif item.entity_type == "user":
                             exists = db.get(User, item.entity_id) is not None
                         elif item.entity_type == "screenshot":
-                            exists = db.get(ScreenshotMetadata, item.entity_id) is not None
+                            exists = (
+                                db.get(ScreenshotMetadata, item.entity_id) is not None
+                            )
                         else:
                             # Unknown type — keep it for now, don't delete blindly
                             exists = True
@@ -152,7 +153,6 @@ class SyncService:
                 if removed:
                     _logger.info("orphan queue cleanup removed=%s", removed)
                 db.commit()
-                # Also delegate screenshot orphan pass if data_dir available via provider?
                 # ScreenshotService handles file↔DB orphans separately.
         except Exception as exc:
             _logger.error("recover_orphans failed: %s", exc, exc_info=True)
