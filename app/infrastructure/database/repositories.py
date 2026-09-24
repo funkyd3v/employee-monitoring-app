@@ -237,6 +237,31 @@ class ActivityRepository:
         self._session.flush()
         return open_rows
 
+    def open_for_session(
+        self, session_id: int
+    ) -> ActivityPeriodRecord | None:
+        """The still-open period for ``session_id``, if any."""
+        return self._session.scalar(
+            select(ActivityPeriodRecord)
+            .where(ActivityPeriodRecord.session_id == session_id)
+            .where(ActivityPeriodRecord.ended_at.is_(None))
+            .limit(1)
+        )
+
+    def close_open_for_session(
+        self, session_id: int, *, ended_at: datetime
+    ) -> ActivityPeriodRecord | None:
+        """Close the open period for ``session_id`` at ``ended_at``."""
+        row = self.open_for_session(session_id)
+        if row is None:
+            return None
+        row.ended_at = ended_at
+        row.duration_seconds = max(
+            0, int((ended_at - row.started_at).total_seconds())
+        )
+        self._session.flush()
+        return row
+
     def list_for_session(self, session_id: int) -> list[ActivityPeriodRecord]:
         return list(
             self._session.scalars(

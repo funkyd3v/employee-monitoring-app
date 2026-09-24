@@ -18,11 +18,13 @@ from typing import TYPE_CHECKING
 from app.config.constants import DATABASE_DIR, DB_FILENAME
 from app.config.settings import AppSettings, LocalConfig, ServerPolicy
 from app.core.logging import get_logger, setup_logging
+from app.domain.activity.provider import ActivityProvider, DummyActivityProvider
 from app.domain.auth.auth import DummyAuthConfig, LocalDummyAuthProvider
 from app.domain.sessions.state_machine import SessionMachine
 from app.infrastructure.database.db import Database
 from app.infrastructure.database.migrations import migrate
 from app.infrastructure.security.credential_store import build_credential_store
+from app.services.activity_service import ActivityService
 from app.services.auth_service import AuthService
 from app.services.session_service import SessionService
 
@@ -66,6 +68,16 @@ class Container:
         # persistence live behind the same surface.
         self.session_service = SessionService(machine=self.session_machine)
 
+        # Phase 6 activity monitoring. Provider is platform-selected; service
+        # owns idle-threshold policy and persisted activity_periods.
+        self.activity_provider: ActivityProvider = self._build_activity_provider()
+        self.activity_service = ActivityService(
+            session_factory=self.database.session,
+            idle_threshold_seconds=self.settings.server.idle_threshold_seconds,
+        )
+        # Let SessionService project real active/idle breakdown & pill state
+        self.session_service.set_activity_service(self.activity_service)
+
     def open_database(self) -> None:
         """Migrate the schema to the current version at startup."""
         version = migrate(self.database.engine)
@@ -80,9 +92,26 @@ class Container:
         # repositories per transaction. Passing a repo bound to a closed session
         # would be detached — don't do that.
         self.session_service.set_session_factory(self.database.session)
+        self.activity_service.set_session_factory(self.database.session)
         # keep old dual-arg shim working for any external callers
         with contextlib.suppress(Exception):
             self.session_service.set_persistence(session_factory=self.database.session)
+
+    @staticmethod
+    def _build_activity_provider() -> ActivityProvider:
+        """Select the activity provider for this platform/mode."""
+        import sys
+
+        if sys.platform == "win32":
+            try:
+                from app.infrastructure.activity.windows_activity_provider import (
+                    WindowsActivityProvider,
+                )
+
+                return WindowsActivityProvider()
+            except Exception:  # noqa: S110
+                pass
+        return DummyActivityProvider()
 
     def close_database(self) -> None:
         self.database.dispose()

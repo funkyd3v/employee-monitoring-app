@@ -88,6 +88,10 @@ class UiController(QObject):
         self.login = LoginWindow()
         self.dashboard = DashboardWindow(self._sessions)
         self.tray = TrayManager()
+        # Activity live refresh — keeps pill/breakdown in sync between session actions.
+        self._activity_poller = QTimer(self)
+        self._activity_poller.setInterval(2000)
+        self._activity_poller.timeout.connect(self._refresh_activity_view)
 
         self._wire()
 
@@ -114,6 +118,7 @@ class UiController(QObject):
 
     def shutdown(self) -> None:
         """Park worker threads and hide windows (no auth teardown here)."""
+        self._activity_poller.stop()
         if self._thread is not None and self._thread.isRunning():
             self._thread.quit()
             self._thread.wait(2000)
@@ -143,6 +148,7 @@ class UiController(QObject):
         self.tray.set_view(view)
         self.dashboard.show()
         self.dashboard.raise_()
+        self._activity_poller.start()
 
     def _show_dashboard(self) -> None:
         if not self._auth.is_authenticated():
@@ -200,6 +206,15 @@ class UiController(QObject):
         self._worker = None
         self._thread = None
 
+    def _refresh_activity_view(self) -> None:
+        if not self.dashboard.isVisible():
+            return
+        if self._sessions.state not in (AppState.WORKING, AppState.BREAK, AppState.COMPLETED):
+            return
+        view = self._sessions.tick()
+        self.dashboard.set_view(view)
+        self.tray.set_view(view)
+
     # ── Session actions from the tray ──────────────────────────────────────
     def _tray_take_break(self) -> None:
         view = self._sessions.take_break()
@@ -213,6 +228,7 @@ class UiController(QObject):
         self.dashboard.request_logout()
 
     def _logout(self) -> None:
+        self._activity_poller.stop()
         view = self._sessions.tick()
         if view.state in _ACTIVE_STATES:
             self._sessions.check_out()

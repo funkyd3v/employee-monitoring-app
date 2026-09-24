@@ -352,6 +352,14 @@ class DashboardWindow(FramelessWindow):
 
         self._timer_caption.setText(_PAGE_CAPTIONS[view.state])
         self._pill.set_state(_pill_state(view))
+        # Live "Last activity" label — reflects idle vs active without raw input.
+        if view.state is AppState.WORKING:
+            if view.activity_state is ActivityState.IDLE:
+                self._last_activity.setText("Idle — away from input")
+            else:
+                self._last_activity.setText("Last activity: now")
+        else:
+            self._last_activity.setText("Last activity: —")
 
         if view.state is AppState.WORKING:
             self._working_timer.set_elapsed(view.elapsed_work_seconds)

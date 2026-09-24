@@ -11,6 +11,11 @@ Correctness).
 Phase 5 (work-session engine) layers SQLite persistence and restart recovery
 behind the same three call surfaces: the state machine already carries the
 full transition/session semantics; this service only exposes them.
+
+Phase 6 (activity engine) layers active/idle tracking behind the same
+projection: BREAK pauses, CHECK_OUT closes, and ``tick()`` reflects the
+real ``activity_state`` + ``active/idle`` minutes from persisted
+``activity_periods`` (docs/TESTING_AND_DOD.md).
 """
 
 from __future__ import annotations
@@ -78,6 +83,7 @@ class SessionService:
         self._logger = get_logger("session")
         # Back-compat: some callers still pass repo directly (tests)
         self._session_repository: SessionRepository | None = None
+        self._activity_service: Any | None = None
 
     # Back-compat shim for old wiring (container used repo+factory). Keep it
     # so existing tests don't break if they call set_persistence(repo,factory).
@@ -100,6 +106,10 @@ class SessionService:
 
     def set_session_factory(self, factory: SessionFactory | None) -> None:
         self._session_factory = factory
+
+    def set_activity_service(self, service: Any | None) -> None:
+        """Bind the activity engine (Phase 6) — keeps tick() real."""
+        self._activity_service = service
 
     def set_user(self, user_id: int | None) -> None:
         """Bind the authenticated user (controllers set this post-login)."""
@@ -124,22 +134,27 @@ class SessionService:
         at = self._clock.utc()
         self._machine.apply(SessionAction.CHECK_IN, at=at, user_id=self._user_id)
         self._persist_check_in(at)
+        self._activity_start(at)
         return self.tick()
 
     def take_break(self) -> SessionView:
         at = self._clock.utc()
         self._machine.apply(SessionAction.TAKE_BREAK, at=at)
         self._persist_take_break(at)
+        self._activity_pause(at)
         return self.tick()
 
     def resume(self) -> SessionView:
         at = self._clock.utc()
         self._machine.apply(SessionAction.RESUME, at=at)
         self._persist_resume(at)
+        self._activity_resume(at)
         return self.tick()
 
     def check_out(self) -> SessionView:
         at = self._clock.utc()
+        # Activity must close before checkout persists total
+        self._activity_stop(at)
         self._machine.apply(SessionAction.CHECK_OUT, at=at)
         self._persist_check_out(at)
         return self.tick()
@@ -261,6 +276,41 @@ class SessionService:
         except Exception as exc:
             self._logger.error("failed to persist checkout: %s", exc, exc_info=True)
 
+    def _activity_start(self, at: datetime) -> None:
+        if self._activity_service is None:
+            return
+        session = self._machine.session
+        if session is None or session.id is None:
+            return
+        try:
+            self._activity_service.start(session.id, at=at)
+        except Exception as exc:
+            self._logger.error("activity start failed: %s", exc, exc_info=True)
+
+    def _activity_pause(self, at: datetime) -> None:
+        if self._activity_service is None:
+            return
+        try:
+            self._activity_service.pause(at=at)
+        except Exception as exc:
+            self._logger.error("activity pause failed: %s", exc, exc_info=True)
+
+    def _activity_resume(self, at: datetime) -> None:
+        if self._activity_service is None:
+            return
+        try:
+            self._activity_service.resume(at=at)
+        except Exception as exc:
+            self._logger.error("activity resume failed: %s", exc, exc_info=True)
+
+    def _activity_stop(self, at: datetime) -> None:
+        if self._activity_service is None:
+            return
+        try:
+            self._activity_service.stop(at=at)
+        except Exception as exc:
+            self._logger.error("activity stop failed: %s", exc, exc_info=True)
+
     def restore_session(self) -> bool:
         """Load the persisted active session from the database on startup.
 
@@ -286,7 +336,7 @@ class SessionService:
                     domain.id,
                     domain.status,
                 )
-                return True
+                restored = True
         except Exception as exc:
             self._logger.error(
                 "failed to restore session: user_id=%s error=%s",
@@ -295,6 +345,21 @@ class SessionService:
                 exc_info=True,
             )
             return False
+
+        # Rebuild activity mirror for the restored session (Phase 6)
+        if restored and self._activity_service is not None and domain.id is not None:
+            try:
+                # If WORKING/BREAK, re-attach activity tracking from persisted periods
+                from app.domain.sessions.session import WorkSessionStatus
+
+                if domain.status in (WorkSessionStatus.WORKING, WorkSessionStatus.BREAK):
+                    self._activity_service.restore(domain.id)
+                    if domain.status is WorkSessionStatus.BREAK:
+                        # Ensure service is paused (no idle ticks during break)
+                        self._activity_service._paused = True
+            except Exception as exc:
+                self._logger.error("activity restore failed: %s", exc, exc_info=True)
+        return restored
 
     @staticmethod
     def _orm_to_domain(row: Any) -> WorkSession:
@@ -332,8 +397,11 @@ class SessionService:
         state = machine.state
         now = self._clock.utc()
 
+        activity_state = self._resolve_activity_state(state, now)
+
         view = SessionView(
             state=state,
+            activity_state=activity_state,
             can_check_in=machine.can(SessionAction.CHECK_IN),
             can_take_break=machine.can(SessionAction.TAKE_BREAK),
             can_resume=machine.can(SessionAction.RESUME),
@@ -349,12 +417,14 @@ class SessionService:
         if state is AppState.COMPLETED:
             total = session.total_work_seconds
             break_seconds = session.accumulated_break_seconds
+            active_m, idle_m = self._resolve_breakdown(session, now, total)
             return SessionView(
                 state=state,
+                activity_state=activity_state,
                 elapsed_work_seconds=total,
                 checked_out_at=session.ended_at,
-                active_minutes=total // 60,
-                idle_minutes=0,  # activity engine (Phase 6) fills this
+                active_minutes=active_m,
+                idle_minutes=idle_m,
                 break_minutes=break_seconds // 60,
                 can_check_in=machine.can(SessionAction.CHECK_IN),
                 can_take_break=False,
@@ -364,9 +434,14 @@ class SessionService:
             )
 
         if state is AppState.WORKING:
+            active_m, idle_m = self._resolve_breakdown(session, now, None)
             return SessionView(
                 state=state,
+                activity_state=activity_state,
                 elapsed_work_seconds=session.elapsed_work_seconds(now),
+                active_minutes=active_m,
+                idle_minutes=idle_m,
+                break_minutes=0,
                 can_check_in=False,
                 can_take_break=machine.can(SessionAction.TAKE_BREAK),
                 can_resume=False,
@@ -378,14 +453,47 @@ class SessionService:
         open_break_seconds = self._open_break_elapsed(session, now)
         return SessionView(
             state=state,
+            activity_state=activity_state,
             elapsed_work_seconds=session.elapsed_work_seconds(now),
             elapsed_break_seconds=open_break_seconds,
+            active_minutes=0,
+            idle_minutes=0,
+            break_minutes=0,
             can_check_in=False,
             can_take_break=False,
             can_resume=machine.can(SessionAction.RESUME),
             can_check_out=machine.can(SessionAction.CHECK_OUT),
             ticking=True,
         )
+
+    def _resolve_activity_state(self, state: AppState, now: datetime) -> ActivityState:
+        if state is not AppState.WORKING:
+            return ActivityState.ACTIVE
+        if self._activity_service is None:
+            return ActivityState.ACTIVE
+        try:
+            state_out: ActivityState = self._activity_service.current_state(at=now)
+            return state_out
+        except Exception:
+            return ActivityState.ACTIVE
+
+    def _resolve_breakdown(
+        self, session: WorkSession, now: datetime, total_override: int | None
+    ) -> tuple[int, int]:
+        if self._activity_service is None or session.id is None:
+            if total_override is not None:
+                return (total_override // 60, 0)
+            return (0, 0)
+        try:
+            active_s, idle_s = self._activity_service.get_breakdown(session.id, at=now)
+            # On COMPLETED, persisted periods are authoritative but fall back to total
+            if total_override is not None and active_s == 0 and idle_s == 0:
+                return (total_override // 60, 0)
+            return (active_s // 60, idle_s // 60)
+        except Exception:
+            if total_override is not None:
+                return (total_override // 60, 0)
+            return (0, 0)
 
     @staticmethod
     def _open_break_elapsed(session: WorkSession, now: datetime) -> int:

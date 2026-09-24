@@ -93,6 +93,51 @@ def main(argv: list[str] | None = None) -> int:
             logger.info("No persisted session to restore.")
 
     lifecycle.add("session", start=_restore_session)
+
+    # Activity worker — started after session restore, stopped before DB close.
+    # Runs on a dedicated QThread; UI updates flow via Qt signals only.
+    activity_supervisor: object | None = None
+
+    def _start_activity(_ctx: LifecycleContext) -> None:
+        nonlocal activity_supervisor
+        try:
+            from app.workers.activity_worker import ActivityWorkerSupervisor
+
+            supervisor = ActivityWorkerSupervisor(
+                container.activity_provider,
+                container.activity_service,
+                poll_interval_ms=5000,
+            )
+            supervisor.state_changed.connect(
+                lambda _state: container.session_service.tick()  # keep service state warm
+            )
+            activity_supervisor = supervisor
+            supervisor.start()
+            lifecycle.context.set("activity_supervisor", supervisor)
+            # If a session was restored as WORKING, re-attach tracking is already
+            # done in SessionService.restore_session → ActivityService.restore.
+            # The worker's poll will pick up idle after the first interval.
+            logger.info("Activity worker started")
+        except Exception as exc:
+            logger.error("failed to start activity worker: %s", exc, exc_info=True)
+
+    def _stop_activity(_ctx: LifecycleContext) -> None:
+        nonlocal activity_supervisor
+        import contextlib
+
+        with contextlib.suppress(Exception):
+            container.activity_service.shutdown()
+        sup = lifecycle.context.get("activity_supervisor")
+        if sup is not None:
+            with contextlib.suppress(Exception):
+                sup.stop()  # type: ignore[attr-defined]
+        if activity_supervisor is not None:
+            with contextlib.suppress(Exception):
+                activity_supervisor.stop()  # type: ignore[attr-defined]
+            activity_supervisor = None
+
+    lifecycle.add("activity", start=_start_activity, shutdown=_stop_activity)
+
     ui = ui_controller.UiController(container, app)
 
     def _start_ui(_ctx: LifecycleContext) -> None:
