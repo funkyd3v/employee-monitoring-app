@@ -10,10 +10,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 from app.config.constants import APP_NAME_SHORT
+from app.ui.theme import ui_font
 from app.ui.theme.tokens import ACTIVE_PALETTE
 
 if TYPE_CHECKING:
@@ -23,7 +24,7 @@ _INITIALS = APP_NAME_SHORT[:2]
 
 
 class BrandMark(QWidget):
-    """A rounded, gradient-filled square with the brand initials."""
+    """A rounded, solid-filled square with the brand initials."""
 
     def __init__(
         self,
@@ -42,24 +43,19 @@ class BrandMark(QWidget):
 
         rect = self.rect().adjusted(0, 0, -1, -1)
 
-        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        gradient.setColorAt(0.0, QColor(ACTIVE_PALETTE.accent))
-        gradient.setColorAt(1.0, QColor(ACTIVE_PALETTE.accent_end))
-
         path = QPainterPath()
         path.addRoundedRect(rect, rect.height() / 3, rect.height() / 3)
-        painter.fillPath(path, gradient)
+        painter.fillPath(path, QColor(ACTIVE_PALETTE.accent))
 
-        painter.setPen(
-            QPen(QColor(ACTIVE_PALETTE.accent_end).darker(140), 1, Qt.PenStyle.SolidLine)
-        )
+        painter.setPen(QPen(QColor(ACTIVE_PALETTE.accent_hover), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawPath(path)
 
-        font = QFont("Inter", max(7, self._size // 4), QFont.Weight.DemiBold)
-        font.setPixelSize(int(self._size * 0.38))
+        font = ui_font()
+        font.setPixelSize(max(8, int(self._size * 0.38)))
+        font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
-        painter.setPen(QColor("#FFFFFF"))
+        painter.setPen(QColor(ACTIVE_PALETTE.on_accent))
         painter.drawText(
             self.rect(),
             Qt.AlignmentFlag.AlignCenter,

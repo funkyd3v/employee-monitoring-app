@@ -21,6 +21,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.theme.tokens import (
+    ACTIVE_PALETTE,
+    SPACING_LG,
+    SPACING_MD,
+    SPACING_SM,
+    SPACING_XL,
+)
 from app.ui.windows.base_window import FramelessWindow
 from app.ui.windows.components import BrandMark, FormField, Spinner
 
@@ -48,9 +55,9 @@ class LoginWindow(FramelessWindow):
         card.setMaximumWidth(430)
 
         shadow = QGraphicsDropShadowEffect(card)
-        shadow.setBlurRadius(48)
+        shadow.setBlurRadius(40)
         shadow.setOffset(0, 8)
-        shadow.setColor(QColor(0, 0, 0, 130))
+        shadow.setColor(QColor(ACTIVE_PALETTE.shadow))
         card.setGraphicsEffect(shadow)
 
         brand = BrandMark(56)
@@ -78,7 +85,7 @@ class LoginWindow(FramelessWindow):
         self._submit_button.clicked.connect(self._on_submit_clicked)
 
         button_row = QHBoxLayout()
-        button_row.setSpacing(10)
+        button_row.setSpacing(SPACING_SM)
         button_row.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignVCenter)
         button_row.addWidget(self._submit_button, 1)
 
@@ -96,19 +103,24 @@ class LoginWindow(FramelessWindow):
         )
 
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(36, 34, 36, 28)
-        card_layout.setSpacing(10)
+        card_layout.setContentsMargins(
+            SPACING_XL,
+            SPACING_LG,
+            SPACING_XL,
+            SPACING_LG,
+        )
+        card_layout.setSpacing(SPACING_SM)
         card_layout.addWidget(brand, 0, Qt.AlignmentFlag.AlignHCenter)
-        card_layout.addSpacing(8)
+        card_layout.addSpacing(SPACING_SM)
         card_layout.addWidget(title)
         card_layout.addWidget(subtitle)
-        card_layout.addSpacing(18)
+        card_layout.addSpacing(SPACING_MD)
         card_layout.addWidget(self._email)
         card_layout.addWidget(self._password)
-        card_layout.addSpacing(8)
+        card_layout.addSpacing(SPACING_SM)
         card_layout.addLayout(button_row)
         card_layout.addWidget(self._submit_error)
-        card_layout.addSpacing(10)
+        card_layout.addSpacing(SPACING_SM)
         card_layout.addWidget(self._connection_status)
 
         root.addStretch(1)
@@ -116,7 +128,12 @@ class LoginWindow(FramelessWindow):
         root.addStretch(1)
 
         card_outer = QVBoxLayout(center)
-        card_outer.setContentsMargins(24, 24, 24, 24)
+        card_outer.setContentsMargins(
+            SPACING_LG,
+            SPACING_LG,
+            SPACING_LG,
+            SPACING_LG,
+        )
         card_outer.addWidget(card)
 
     # ── Presentation API (controller-facing) ───────────────────────────────

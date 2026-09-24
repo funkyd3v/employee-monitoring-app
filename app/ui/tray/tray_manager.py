@@ -52,7 +52,7 @@ def _paint_tray_icon(state: TrayState) -> QPixmap:
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    center = 32
+    center = size // 4
     colors = {
         TrayState.CHECKED_IN: ACTIVE_PALETTE.success,
         TrayState.ON_BREAK: ACTIVE_PALETTE.warning,
@@ -70,7 +70,7 @@ def _paint_tray_icon(state: TrayState) -> QPixmap:
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(color)
         painter.drawEllipse(center - 14, center - 14, 28, 28)
-        painter.setBrush(QColor(0, 0, 0, 0))
+        painter.setBrush(Qt.GlobalColor.transparent)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
         painter.drawRect(center - 14, center, 28, 14)
     else:

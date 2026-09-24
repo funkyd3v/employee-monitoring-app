@@ -11,7 +11,7 @@ never an OS dialog.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -25,7 +25,6 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QHideEvent,
-    QLinearGradient,
     QPainter,
     QPaintEvent,
     QPen,
@@ -46,12 +45,25 @@ from PySide6.QtWidgets import (
 from app.domain.activity.activity import ActivityState
 from app.domain.sessions.state_machine import AppState
 from app.ui.dialogs.confirm_dialog import ConfirmDialog
-from app.ui.theme.tokens import ACTIVE_PALETTE
+from app.ui.theme import ui_font
+from app.ui.theme.tokens import (
+    ACTIVE_PALETTE,
+    ACTIVE_TIMER_FONT_PT,
+    READY_TIMER_FONT_PT,
+    SECONDARY_TIMER_FONT_PT,
+    SPACING_LG,
+    SPACING_MD,
+    SPACING_SM,
+    SPACING_XL,
+    SPACING_XS,
+)
 from app.ui.windows.base_window import FramelessWindow
 from app.ui.windows.components import StatusPill, TimerWidget
 from app.ui.windows.components.status_pill import PillState
 
 if TYPE_CHECKING:
+    from PySide6.QtWidgets import QGraphicsEffect
+
     from app.services.session_service import SessionView
     from app.ui.view_models import DashboardUser, SessionPresenter
 
@@ -105,25 +117,22 @@ class _Avatar(QToolButton):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        circle = self.rect().adjusted(2, 3, -46, -3)
-        gradient = QLinearGradient(circle.topLeft(), circle.bottomRight())
-        gradient.setColorAt(0.0, QColor(ACTIVE_PALETTE.accent))
-        gradient.setColorAt(1.0, QColor(ACTIVE_PALETTE.accent_end))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(gradient)
+        circle = self.rect().adjusted(2, 1, -50, -1)
+        painter.setPen(QPen(QColor(ACTIVE_PALETTE.border), 1))
+        painter.setBrush(QColor(ACTIVE_PALETTE.accent))
         painter.drawEllipse(circle)
 
-        font = QFont("Inter")
+        font = ui_font()
         font.setPixelSize(10)
         font.setWeight(QFont.Weight.DemiBold)
         painter.setFont(font)
-        painter.setPen(QPen(QColor("#FFFFFF")))
+        painter.setPen(QColor(ACTIVE_PALETTE.on_accent))
         painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, self._label)
 
-        chevron = QFont("Inter")
+        chevron = ui_font()
         chevron.setPixelSize(12)
         painter.setFont(chevron)
-        painter.setPen(QPen(QColor(ACTIVE_PALETTE.text_secondary)))
+        painter.setPen(QColor(ACTIVE_PALETTE.text_secondary))
         painter.drawText(QPoint(self.width() - 16, self.height() // 2 + 4), "\u25be")
         painter.end()
 
@@ -177,13 +186,17 @@ class DashboardWindow(FramelessWindow):
         self._last_activity = QLabel("Last activity: now")
         self._last_activity.setObjectName("LastActivity")
         status_row = QHBoxLayout()
-        status_row.setSpacing(10)
+        status_row.setSpacing(SPACING_SM)
         status_row.addWidget(self._pill)
         status_row.addWidget(self._last_activity)
+        status_row_host = QWidget()
+        status_row_host.setObjectName("ActivityMeta")
+        status_row_host.setLayout(status_row)
 
         working_caption = QLabel("Work-session activity is recorded while you work.")
         working_caption.setObjectName("PanelCaption")
         working_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        working_caption.setMaximumWidth(600)
 
         # READY page
         self._check_in_button = QPushButton("Check In")
@@ -191,7 +204,7 @@ class DashboardWindow(FramelessWindow):
         self._check_in_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._check_in_button.clicked.connect(self._on_check_in)
         self._ready_timer = TimerWidget()
-        self._ready_timer.set_font_size(44)
+        self._ready_timer.set_font_size(READY_TIMER_FONT_PT)
 
         ready = self._page(
             subtitle="Ready to start your day?",
@@ -200,6 +213,7 @@ class DashboardWindow(FramelessWindow):
             buttons=[self._check_in_button],
             extras=[],
         )
+        ready.setObjectName("ReadyPage")
 
         # WORKING page
         self._break_button = QPushButton("Take a Break")
@@ -211,22 +225,26 @@ class DashboardWindow(FramelessWindow):
         self._checkout_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._checkout_button.clicked.connect(self._on_check_out)
         self._working_timer = TimerWidget()
-        self._working_timer.set_font_size(48)
+        self._working_timer.set_font_size(ACTIVE_TIMER_FONT_PT)
 
         button_row = QHBoxLayout()
-        button_row.setSpacing(10)
+        button_row.setSpacing(SPACING_MD)
         button_row.addStretch(1)
         button_row.addWidget(self._break_button)
         button_row.addWidget(self._checkout_button)
         button_row.addStretch(1)
+        button_row_host = QWidget()
+        button_row_host.setObjectName("ActionRow")
+        button_row_host.setLayout(button_row)
 
         working = self._page(
             subtitle="You're checked in",
             headline=None,
             timer=self._working_timer,
             buttons=[],
-            extras=[button_row, status_row, working_caption],
+            extras=[button_row_host, status_row_host, working_caption],
         )
+        working.setObjectName("WorkingPage")
 
         # BREAK page
         self._resume_button = QPushButton("Resume")
@@ -234,7 +252,7 @@ class DashboardWindow(FramelessWindow):
         self._resume_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._resume_button.clicked.connect(self._on_resume)
         self._break_timer = TimerWidget()
-        self._break_timer.set_font_size(44)
+        self._break_timer.set_font_size(SECONDARY_TIMER_FONT_PT)
         break_caption = QLabel("Break time is separate from work time.")
         break_caption.setObjectName("PanelCaption")
         break_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -246,6 +264,7 @@ class DashboardWindow(FramelessWindow):
             buttons=[self._resume_button],
             extras=[break_caption],
         )
+        break_page.setObjectName("BreakPage")
 
         # COMPLETED page
         self._again_button = QPushButton("Check In")
@@ -253,6 +272,7 @@ class DashboardWindow(FramelessWindow):
         self._again_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._again_button.clicked.connect(self._on_check_in)
         self._completed_timer = TimerWidget()
+        self._completed_timer.set_font_size(SECONDARY_TIMER_FONT_PT)
         self._checked_out_label = QLabel()
         self._checked_out_label.setObjectName("PanelCaption")
         self._checked_out_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -265,6 +285,7 @@ class DashboardWindow(FramelessWindow):
             buttons=[self._again_button],
             extras=[self._checked_out_label, self._chips],
         )
+        completed.setObjectName("CompletedPage")
 
         self._stack = QStackedWidget(self.body())
         self._stack.addWidget(ready)
@@ -286,28 +307,35 @@ class DashboardWindow(FramelessWindow):
         extras: list[QWidget | QHBoxLayout],
     ) -> QWidget:
         page = QWidget()
+        page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(48, 20, 48, 36)
-        layout.setSpacing(10)
+        layout.setContentsMargins(
+            SPACING_XL * 2,
+            SPACING_LG,
+            SPACING_XL * 2,
+            SPACING_XL,
+        )
+        layout.setSpacing(SPACING_SM)
 
         sub = QLabel(subtitle)
-        sub.setObjectName("PanelSubtitle")
+        sub.setObjectName("StatusLine")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout.addStretch(1)
         if headline is not None:
             layout.addWidget(headline)
-            layout.addSpacing(6)
+            layout.addSpacing(SPACING_XS)
         layout.addWidget(sub)
+        layout.addSpacing(SPACING_SM)
         layout.addWidget(timer)
         layout.addWidget(self._timer_caption)
-        layout.addSpacing(12)
+        layout.addSpacing(SPACING_MD)
 
         if buttons:
             for button in buttons:
                 layout.addWidget(button, 0, Qt.AlignmentFlag.AlignHCenter)
         for extra in extras:
-            layout.addSpacing(8)
+            layout.addSpacing(SPACING_SM)
             if isinstance(extra, QHBoxLayout):
                 row = QWidget()
                 row.setLayout(extra)
@@ -478,6 +506,12 @@ class DashboardWindow(FramelessWindow):
         animation.setStartValue(0.0)
         animation.setEndValue(1.0)
         animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+
+        def clear_effect() -> None:
+            if widget.graphicsEffect() is effect:
+                widget.setGraphicsEffect(cast("QGraphicsEffect", None))
+
+        animation.finished.connect(clear_effect)
         animation.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
 

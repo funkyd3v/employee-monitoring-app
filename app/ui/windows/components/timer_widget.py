@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QLabel, QWidget
 
 from app.config.constants import APP_NAME
 from app.ui.theme import mono_font
+from app.ui.theme.tokens import ACTIVE_TIMER_FONT_PT
 
 
 def format_elapsed_hms(total_seconds: int) -> str:
@@ -29,8 +30,9 @@ class TimerWidget(QLabel):
     def __init__(self, *, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("TimerLabel")
-        self._font_size = 52
+        self._font_size = ACTIVE_TIMER_FONT_PT
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumHeight(84)
         self._update_font()
         self.set_elapsed(0)
         self.setToolTip(f"{APP_NAME} elapsed time (recomputed, never counted)")

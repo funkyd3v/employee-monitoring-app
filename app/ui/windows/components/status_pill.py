@@ -83,9 +83,9 @@ class StatusPill(QWidget):
         self.setProperty("pillState", self._state.value)
 
         self._pulse = QPropertyAnimation(self._opacity, b"opacity", self)
-        self._pulse.setDuration(1400)
+        self._pulse.setDuration(1800)
         self._pulse.setStartValue(1.0)
-        self._pulse.setKeyValueAt(0.5, 0.55)
+        self._pulse.setKeyValueAt(0.5, 0.78)
         self._pulse.setEndValue(1.0)
         self._pulse.setLoopCount(-1)
         self._pulse.setEasingCurve(QEasingCurve.Type.InOutSine)

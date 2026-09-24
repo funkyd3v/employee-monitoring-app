@@ -11,13 +11,24 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
+    QGraphicsDropShadowEffect,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
     QWidget,
+)
+
+from app.ui.theme.tokens import (
+    ACTIVE_PALETTE,
+    SPACING_LG,
+    SPACING_MD,
+    SPACING_SM,
+    SPACING_XL,
 )
 
 if TYPE_CHECKING:
@@ -61,28 +72,49 @@ class ConfirmDialog(QWidget):
         confirm.clicked.connect(self.confirm)
 
         buttons = QHBoxLayout()
-        buttons.setSpacing(10)
+        buttons.setSpacing(SPACING_SM)
         buttons.addStretch(1)
         buttons.addWidget(cancel)
         buttons.addWidget(confirm)
 
         card_body = QVBoxLayout()
-        card_body.setContentsMargins(28, 24, 28, 20)
-        card_body.setSpacing(10)
+        card_body.setContentsMargins(SPACING_XL, SPACING_LG, SPACING_XL, SPACING_MD)
+        card_body.setSpacing(SPACING_SM)
         card_body.addWidget(title_label)
         card_body.addWidget(message_label)
-        card_body.addSpacing(6)
+        card_body.addSpacing(SPACING_SM)
         card_body.addLayout(buttons)
 
         card = QWidget(self)
         card.setObjectName("DialogCard")
-        card.setMaximumWidth(440)
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         card.setLayout(card_body)
+
+        card_shell = QWidget(self)
+        card_shell.setObjectName("DialogCardShell")
+        card_shell.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        card_shell.setFixedWidth(420)
+        card_shell.setMinimumHeight(180)
+        card_shell_layout = QVBoxLayout(card_shell)
+        card_shell_layout.setContentsMargins(0, 0, 0, 0)
+        card_shell_layout.addWidget(card)
+
+        shadow = QGraphicsDropShadowEffect(card_shell)
+        shadow.setBlurRadius(36)
+        shadow.setOffset(0, 10)
+        shadow.setColor(QColor(ACTIVE_PALETTE.shadow))
+        card_shell.setGraphicsEffect(shadow)
+        self._card_shell = card_shell
+        self._card = card
+        self._fade_effect = QGraphicsOpacityEffect(card)
+        self._fade_effect.setOpacity(0.0)
+        card.setGraphicsEffect(self._fade_effect)
+        self._fade_animation: QPropertyAnimation | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addStretch(1)
-        layout.addWidget(card, 0, Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(card_shell, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
 
         confirm.setFocus(Qt.FocusReason.PopupFocusReason)
@@ -95,6 +127,13 @@ class ConfirmDialog(QWidget):
         self.show()
         self.raise_()
         self.setFocus()
+
+        self._fade_animation = QPropertyAnimation(self._fade_effect, b"opacity", self)
+        self._fade_animation.setDuration(180)
+        self._fade_animation.setStartValue(0.0)
+        self._fade_animation.setEndValue(1.0)
+        self._fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._fade_animation.start()
 
     def confirm(self) -> None:
         self.confirmed.emit()
