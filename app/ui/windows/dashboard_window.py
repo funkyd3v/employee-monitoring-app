@@ -20,15 +20,6 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import (
-    QColor,
-    QFont,
-    QHideEvent,
-    QPainter,
-    QPaintEvent,
-    QPen,
-    QShowEvent,
-)
 from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -44,9 +35,7 @@ from PySide6.QtWidgets import (
 from app.domain.activity.activity import ActivityState
 from app.domain.sessions.state_machine import AppState
 from app.ui.dialogs.confirm_dialog import ConfirmDialog
-from app.ui.theme import ui_font
 from app.ui.theme.tokens import (
-    ACTIVE_PALETTE,
     ACTIVE_TIMER_FONT_PT,
     READY_TIMER_FONT_PT,
     SECONDARY_TIMER_FONT_PT,
@@ -61,6 +50,7 @@ from app.ui.windows.components import StatusPill, TimerWidget
 from app.ui.windows.components.status_pill import PillState
 
 if TYPE_CHECKING:
+    from PySide6.QtGui import QHideEvent, QShowEvent
     from PySide6.QtWidgets import QGraphicsEffect
 
     from app.services.session_service import SessionView
@@ -95,45 +85,26 @@ def local_time_label(utc: datetime) -> str:
     return utc.astimezone().strftime("%H:%M")
 
 
-class _Avatar(QToolButton):
-    """Circular initials badge with a chevron; opens the user menu."""
+class _ProfileTrigger(QToolButton):
+    """Rounded username trigger for the account menu."""
 
     def __init__(self, *, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("AvatarButton")
-        self.setFixedSize(84, 34)
+        self.setObjectName("ProfileTrigger")
+        self.setText("User  \u25be")
+        self.setFixedHeight(32)
+        self.setMinimumWidth(96)
+        self.setMaximumWidth(180)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName("Account menu")
         self.setToolTip("Account menu")
-        self._label = "?"
 
-    def set_label(self, label: str) -> None:
-        self._label = label
-        self.setToolTip(f"Account menu \u2212 {label}")
-        self.update()
-
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        circle = self.rect().adjusted(2, 1, -50, -1)
-        painter.setPen(QPen(QColor(ACTIVE_PALETTE.border), 1))
-        painter.setBrush(QColor(ACTIVE_PALETTE.accent))
-        painter.drawEllipse(circle)
-
-        font = ui_font()
-        font.setPixelSize(10)
-        font.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(font)
-        painter.setPen(QColor(ACTIVE_PALETTE.on_accent))
-        painter.drawText(circle, Qt.AlignmentFlag.AlignCenter, self._label)
-
-        chevron = ui_font()
-        chevron.setPixelSize(12)
-        painter.setFont(chevron)
-        painter.setPen(QColor(ACTIVE_PALETTE.text_secondary))
-        painter.drawText(QPoint(self.width() - 16, self.height() // 2 + 4), "\u25be")
-        painter.end()
+    def set_user(self, user: DashboardUser) -> None:
+        self.setText(f"{user.first_name}  \u25be")
+        self.setToolTip(f"Account menu \u2014 {user.full_label}")
+        self.setAccessibleDescription(user.full_label)
 
 
 class DashboardWindow(FramelessWindow):
@@ -169,9 +140,9 @@ class DashboardWindow(FramelessWindow):
         self._team_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.title_bar.add_trailing(self._team_label)
 
-        self._avatar = _Avatar()
-        self._avatar.clicked.connect(self._open_avatar_menu)
-        self.title_bar.add_trailing(self._avatar)
+        self._profile_trigger = _ProfileTrigger()
+        self._profile_trigger.clicked.connect(self._open_profile_menu)
+        self.title_bar.add_trailing(self._profile_trigger)
 
         self._greeting = QLabel()
         self._greeting.setObjectName("PanelTitle")
@@ -354,7 +325,7 @@ class DashboardWindow(FramelessWindow):
         self._user = user
         self._team_label.setText(user.team_name or "Workspace")
         self._team_label.setToolTip(user.team_name or "No team assigned")
-        self._avatar.set_label(user.initials)
+        self._profile_trigger.set_user(user)
         self._greeting.setText(
             f"{greeting_for(datetime.now().hour)}, {user.first_name}"
         )
@@ -448,12 +419,36 @@ class DashboardWindow(FramelessWindow):
     def _do_check_out(self) -> None:
         self.set_view(self._presenter.check_out())
 
-    def _open_avatar_menu(self) -> None:
+    def _profile_menu_position(self, menu: QMenu) -> QPoint:
+        menu.setMaximumWidth(max(self.width() - (2 * SPACING_SM), 1))
+        menu.adjustSize()
+        trigger = self._profile_trigger
+        position = trigger.mapToGlobal(QPoint(trigger.width(), trigger.height()))
+        position.setX(position.x() - menu.width())
+
+        window_top_left = self.mapToGlobal(QPoint(0, 0))
+        window_bottom_right = self.mapToGlobal(QPoint(self.width(), self.height()))
+        position.setX(
+            max(
+                window_top_left.x(),
+                min(position.x(), window_bottom_right.x() - menu.width()),
+            )
+        )
+        position.setY(
+            max(
+                window_top_left.y(),
+                min(position.y(), window_bottom_right.y() - menu.height()),
+            )
+        )
+        return position
+
+    def _open_profile_menu(self) -> None:
         user = self._user
         full = user.full_label if user else "Employee"
         email = user.email if user else ""
 
         menu = QMenu(self)
+        menu.setObjectName("ProfileMenu")
         user_action = menu.addAction(full)
         user_action.setEnabled(False)
         if email:
@@ -466,8 +461,7 @@ class DashboardWindow(FramelessWindow):
         logout = menu.addAction("Logout")
         logout.triggered.connect(self._request_logout)
 
-        position = self._avatar.mapToGlobal(QPoint(0, self._avatar.height()))
-        menu.exec(position)
+        menu.exec(self._profile_menu_position(menu))
 
     def _request_logout(self) -> None:
         if self._view is not None and self._view.state in (

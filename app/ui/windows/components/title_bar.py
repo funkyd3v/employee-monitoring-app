@@ -1,7 +1,7 @@
 """Custom frameless title bar (docs/UI_SPEC.md §Window behavior).
 
 Serves double duty as the dashboard's top bar: brand + app title on the
-left, then an optional trailing cluster (Team Name + avatar menu injected by
+left, then an optional trailing cluster (Team Name + profile menu injected by
 the dashboard) before the minimize/close buttons. There is deliberately no
 maximize/expand affordance anywhere in the UI (product rule #8). Close is
 *requested* via signal so the owning window decides the behavior
@@ -65,7 +65,7 @@ class TitleBar(QWidget):
         layout.addWidget(self._close_button)
 
     def add_trailing(self, widget: QWidget) -> None:
-        """Insert a right-aligned widget (team label, avatar menu, …)."""
+        """Insert a right-aligned widget (team label, profile menu, …)."""
         self._trailing.addWidget(widget)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802

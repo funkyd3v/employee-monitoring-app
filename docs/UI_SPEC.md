@@ -51,10 +51,10 @@ purpose.
 
 **Top bar (navbar-style):**
 ```
-Logo    Employee Monitoring              Team Name   [Avatar ▾]
+Logo    Employee Monitoring              Team Name   [Username ▾]
 ```
 
-Right-aligned Team Name, then a circular avatar/initials badge with a
+Right-aligned Team Name, then a rounded, clickable username trigger with a
 chevron dropdown:
 ```
 ┌────────────────────────┐

@@ -21,7 +21,8 @@ from app.ui.windows.dashboard_window import (
     greeting_for,
     local_time_label,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtWidgets import QMenu
 
 if TYPE_CHECKING:
     from pytestqt.qtbot import QtBot
@@ -172,7 +173,32 @@ def test_completed_page_shows_summary_chips(
 def test_set_user_updates_header_fields(qtbot: QtBot, presenter: StubPresenter) -> None:
     window = make_window(qtbot, presenter)
     assert window._team_label.text() == "Analytics"
+    assert window._profile_trigger.text() == "Ada  ▾"
+    assert window._profile_trigger.toolTip() == "Account menu — Ada Lovelace"
     assert window._greeting.text().endswith("Ada")
+
+
+def test_profile_menu_stays_inside_dashboard(
+    qtbot: QtBot, presenter: StubPresenter
+) -> None:
+    window = make_window(qtbot, presenter)
+    window.show()
+    menu = QMenu(window)
+    menu.addAction(ALICE.full_label)
+    menu.addAction(ALICE.email)
+    menu.addSeparator()
+    menu.addAction("Account")
+    menu.addSeparator()
+    menu.addAction("Logout")
+
+    position = window._profile_menu_position(menu)
+    window_top_left = window.mapToGlobal(QPoint(0, 0))
+    window_bottom_right = window.mapToGlobal(QPoint(window.width(), window.height()))
+
+    assert window_top_left.x() <= position.x()
+    assert position.x() + menu.width() <= window_bottom_right.x()
+    assert window_top_left.y() <= position.y()
+    assert position.y() + menu.height() <= window_bottom_right.y()
 
 
 # ── Actions route through the presenter ────────────────────────────────────

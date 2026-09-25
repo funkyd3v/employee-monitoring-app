@@ -437,19 +437,26 @@ QToolButton#PasswordToggle:pressed {{
     color: {p.accent};
 }}
 
-QPushButton#AvatarButton {{
-    background: transparent;
-    border: none;
-    padding: 2px 4px;
+QToolButton#ProfileTrigger {{
+    background-color: {p.surface};
+    border: 1px solid {p.border};
     border-radius: {RADIUS_MD}px;
+    color: {p.text_primary};
+    font-size: 12px;
+    font-weight: 600;
+    padding: 0 12px;
+    text-align: left;
 }}
 
-QPushButton#AvatarButton:hover {{
+QToolButton#ProfileTrigger:hover {{
     background-color: {p.surface_hover};
+    border-color: {p.accent};
 }}
 
-QPushButton#AvatarButton:pressed {{
+QToolButton#ProfileTrigger:pressed,
+QToolButton#ProfileTrigger:focus {{
     background-color: {p.accent_soft};
+    border-color: {p.accent};
 }}
 
 QMenu {{
