@@ -50,7 +50,7 @@ def test_working_is_checked_in_even_when_idle() -> None:
     assert tray_state_for(view) is TrayState.CHECKED_IN
 
 
-def test_tray_manager_action_enabled_from_projection() -> None:
+def test_tray_manager_action_enabled_from_projection(qapp: object) -> None:
     manager = TrayManager()
 
     manager.set_view(
@@ -60,6 +60,7 @@ def test_tray_manager_action_enabled_from_projection() -> None:
             can_check_out=True,
         )
     )
+    assert not manager._check_in_action.isEnabled()
     assert manager._break_action.isEnabled()
     assert not manager._resume_action.isEnabled()
     assert manager._checkout_action.isEnabled()
@@ -68,11 +69,17 @@ def test_tray_manager_action_enabled_from_projection() -> None:
     manager.set_view(_view(AppState.BREAK, can_resume=True, can_check_out=True))
     assert manager._resume_action.isEnabled()
 
-    manager.set_view(_view(AppState.READY))
+    manager.set_view(_view(AppState.READY, can_check_in=True))
+    assert manager._check_in_action.isEnabled()
     assert not manager._break_action.isEnabled()
     assert not manager._resume_action.isEnabled()
     assert not manager._checkout_action.isEnabled()
     assert manager._status_action.text() == "Current Status: Checked Out"
+
+    actions = manager._menu.actions()
+    assert actions.index(manager._check_in_action) + 1 == actions.index(
+        manager._break_action
+    )
 
 
 def test_tray_manager_signals(qtbot: QtBot) -> None:
@@ -80,6 +87,10 @@ def test_tray_manager_signals(qtbot: QtBot) -> None:
 
     with qtbot.waitSignal(manager.open_dashboard, timeout=300):
         manager._open_action.trigger()
+
+    manager.set_view(_view(AppState.READY, can_check_in=True))
+    with qtbot.waitSignal(manager.check_in, timeout=300):
+        manager._check_in_action.trigger()
 
     manager.set_view(_view(AppState.BREAK, can_resume=True))
     with qtbot.waitSignal(manager.resume, timeout=300):

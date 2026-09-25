@@ -161,6 +161,7 @@ Employee Monitoring
 Open Dashboard
 Current Status: Checked In
 ────────────────────
+Check In
 Take a Break
 Resume
 Check Out

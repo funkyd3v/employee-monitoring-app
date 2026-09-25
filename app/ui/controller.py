@@ -102,6 +102,7 @@ class UiController(QObject):
         self.login.closed_to_tray.connect(self._hide_login_only)
 
         self.tray.open_dashboard.connect(self._show_dashboard)
+        self.tray.check_in.connect(self._tray_check_in)
         self.tray.take_break.connect(self._tray_take_break)
         self.tray.resume.connect(self._tray_resume)
         self.tray.check_out.connect(self._tray_check_out)
@@ -221,6 +222,11 @@ class UiController(QObject):
         self.tray.set_view(view)
 
     # ── Session actions from the tray ──────────────────────────────────────
+    def _tray_check_in(self) -> None:
+        view = self._sessions.check_in()
+        self.dashboard.set_view(view)
+        self.tray.set_view(view)
+
     def _tray_take_break(self) -> None:
         view = self._sessions.take_break()
         self.dashboard.set_view(view)

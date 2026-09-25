@@ -1,10 +1,10 @@
 """System tray (docs/UI_SPEC.md §System tray).
 
 State is surfaced through a colored icon + tooltip and a context menu with
-Open Dashboard, current status, session actions (Take a Break / Resume / Check
-Out), Logout, and Exit. No binary assets exist yet, so tray icons are painted from
-theme tokens (privacy/status transparency: the employee always knows whether
-monitoring is running, per docs/SECURITY_PRIVACY.md §checklist).
+Open Dashboard, current status, session actions (Check In / Take a Break /
+Resume / Check Out), Logout, and Exit. No binary assets exist yet, so tray icons
+are painted from theme tokens (privacy/status transparency: the employee always
+knows whether monitoring is running, per docs/SECURITY_PRIVACY.md §checklist).
 """
 
 from __future__ import annotations
@@ -86,6 +86,7 @@ class TrayManager(QObject):
     """Owns the tray icon + menu; emits domain-ish signals back to the UI."""
 
     open_dashboard = Signal()
+    check_in = Signal()
     take_break = Signal()
     resume = Signal()
     check_out = Signal()
@@ -119,6 +120,9 @@ class TrayManager(QObject):
         self._status_action = self._menu.addAction("Current Status: Checked Out")
         self._status_action.setEnabled(False)
         self._menu.addSeparator()
+
+        self._check_in_action = self._menu.addAction("Check In")
+        self._check_in_action.triggered.connect(self.check_in.emit)
 
         self._break_action = self._menu.addAction("Take a Break")
         self._break_action.triggered.connect(self.take_break.emit)
@@ -154,6 +158,7 @@ class TrayManager(QObject):
         self._tray.setIcon(QIcon(_paint_tray_icon(state)))
         self._tray.setToolTip(f"{APP_NAME} \u2014 {_state_label(state)}")
         self._status_action.setText(f"Current Status: {_state_label(state)}")
+        self._check_in_action.setEnabled(view.can_check_in)
         self._break_action.setEnabled(view.can_take_break)
         self._resume_action.setEnabled(view.can_resume)
         self._checkout_action.setEnabled(view.can_check_out)
