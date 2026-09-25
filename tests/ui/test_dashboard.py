@@ -22,7 +22,6 @@ from app.ui.windows.dashboard_window import (
     local_time_label,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QPushButton
 
 if TYPE_CHECKING:
     from pytestqt.qtbot import QtBot
@@ -114,10 +113,6 @@ def make_window(qtbot: QtBot, presenter: StubPresenter) -> DashboardWindow:
     window.resize(900, 600)
     qtbot.addWidget(window)
     return window
-
-
-def _confirm_button(dialog: ConfirmDialog, text: str) -> QPushButton:
-    return next(b for b in dialog.findChildren(QPushButton) if b.text() == text)
 
 
 # ── Page mapping ───────────────────────────────────────────────────────────
@@ -218,50 +213,18 @@ def test_resume_button_routes_to_presenter(
     assert window._stack.currentIndex() == 1
 
 
-# ── Confirmations are in-app dialogs, not OS dialogs ───────────────────────
-def test_check_out_opens_in_app_confirm_dialog(
+def test_check_out_completes_without_confirmation(
     qtbot: QtBot, presenter: StubPresenter
 ) -> None:
     window = make_window(qtbot, presenter)
     window.set_view(presenter.working())
+    presenter.queue = [presenter.completed(active=5)]
+
+    qtbot.mouseClick(window._checkout_button, Qt.MouseButton.LeftButton)
 
     assert window.findChild(ConfirmDialog) is None
-    window.request_check_out()
-
-    dialog = window.findChild(ConfirmDialog)
-    assert dialog is not None
-    assert not dialog.isHidden()
-
-
-def test_confirm_check_out_completes_session(
-    qtbot: QtBot, presenter: StubPresenter
-) -> None:
-    window = make_window(qtbot, presenter)
-    window.set_view(presenter.working())
-
-    window.request_check_out()
-    dialog = window.findChild(ConfirmDialog)
-    assert dialog is not None
-
-    presenter.queue = [presenter.completed(active=5)]
-    qtbot.mouseClick(_confirm_button(dialog, "Check out"), Qt.MouseButton.LeftButton)
-
     assert presenter.calls == ["check_out"]
     assert window._stack.currentIndex() == 3
-
-
-def test_cancel_check_out_keeps_session(qtbot: QtBot, presenter: StubPresenter) -> None:
-    window = make_window(qtbot, presenter)
-    window.set_view(presenter.working())
-
-    window.request_check_out()
-    dialog = window.findChild(ConfirmDialog)
-    assert dialog is not None
-
-    qtbot.mouseClick(_confirm_button(dialog, "Cancel"), Qt.MouseButton.LeftButton)
-
-    assert presenter.calls == []
-    assert window._stack.currentIndex() == 1
 
 
 # ── Logout confirm only while a session is active ──────────────────────────

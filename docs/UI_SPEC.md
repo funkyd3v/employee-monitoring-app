@@ -112,8 +112,9 @@ gives the employee transparency into how their time was classified. A
   (150–250ms ease) — never an abrupt swap.
 - Timer uses a monospaced numeral style so digit width doesn't jitter as
   it counts.
-- All confirmation dialogs (Check Out, Logout, Exit while working) use a
-  consistently styled in-app modal, never a native OS msgbox.
+- Logout and Exit while working use a consistently styled in-app modal,
+  never a native OS msgbox. Check Out proceeds immediately without a
+  confirmation dialog.
 - Animations stay short and functional — this is an accessibility
   requirement (see below), not just a style choice.
 

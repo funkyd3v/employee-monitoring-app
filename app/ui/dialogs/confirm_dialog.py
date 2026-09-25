@@ -1,7 +1,7 @@
 """In-app confirmation modal (docs/UI_SPEC.md §Interaction & motion).
 
-All confirmations — Check Out, Logout, Exit-while-working — use this
-consistently styled in-app modal, never a native OS message box. It is a
+Logout and exit-while-working confirmations use this consistently styled
+in-app modal, never a native OS message box. It is a
 full-window scrim overlay with a centered card; confirm raises
 :attr:`confirmed`, cancel/Escape raise :attr:`cancelled`, and the overlay
 self-destructs as a :class:`Qt.WA_DeleteOnClose` child of ``parent``.

@@ -4,8 +4,7 @@ Renders every work-session state — READY / WORKING / BREAK / COMPLETED — as
 a crossfading center page, driven by a :class:`SessionPresenter` port. The
 1s ticker only *re-reads* the presenter's recomputed projection; the widget
 never accumulates time itself (docs/ENGINEERING_RULES.md §Timer Correctness).
-Confirmations (Check Out, Logout while a session runs) use the in-app modal,
-never an OS dialog.
+Logout while a session runs uses the in-app modal, never an OS dialog.
 """
 
 from __future__ import annotations
@@ -361,7 +360,7 @@ class DashboardWindow(FramelessWindow):
         )
 
     def request_check_out(self) -> None:
-        """Open the Check Out confirmation (button and tray both call this)."""
+        """Check out immediately (button and tray both call this)."""
         self._on_check_out()
 
     def request_logout(self) -> None:
@@ -444,15 +443,7 @@ class DashboardWindow(FramelessWindow):
         self.set_view(self._presenter.resume())
 
     def _on_check_out(self) -> None:
-        dialog = ConfirmDialog(
-            self,
-            title="Check out?",
-            message="This ends your work session. Your total time stays visible.",
-            confirm_text="Check out",
-            danger=True,
-        )
-        dialog.confirmed.connect(self._do_check_out)
-        dialog.show_overlay()
+        self._do_check_out()
 
     def _do_check_out(self) -> None:
         self.set_view(self._presenter.check_out())
