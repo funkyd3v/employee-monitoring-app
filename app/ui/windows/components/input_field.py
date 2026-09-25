@@ -20,6 +20,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.theme.effects import MOTION
+from app.ui.theme.tokens import SPACING_XS
+
 
 class FormField(QWidget):
     """Labeled input with optional password toggle, error, and shake."""
@@ -43,6 +46,8 @@ class FormField(QWidget):
         self._label.setObjectName("FieldLabel")
 
         self._edit = QLineEdit()
+        self._edit.setObjectName("InputField")
+        self._edit.setAccessibleName(label)
         self._edit.setPlaceholderText(placeholder)
         self._edit.setTextMargins(0, 0, 0, 0)
         self._edit.textChanged.connect(self.text_changed.emit)
@@ -73,7 +78,7 @@ class FormField(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(SPACING_XS)
         layout.addWidget(self._label)
         layout.addWidget(self._field_container)
         layout.addWidget(self._error)
@@ -132,7 +137,7 @@ class FormField(QWidget):
             (1.00, origin),
         ]
         animation = QPropertyAnimation(self._edit, b"pos", self)
-        animation.setDuration(360)
+        animation.setDuration(MOTION.shake_duration_ms)
         animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         for fraction, point in waypoints:
             animation.setKeyValueAt(fraction, point)

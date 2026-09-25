@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from app.ui.theme.tokens import WINDOW_HEIGHT, WINDOW_WIDTH
 from app.ui.windows.components.title_bar import TitleBar
 
 if TYPE_CHECKING:
@@ -24,7 +25,11 @@ class FramelessWindow(QWidget):
 
     closed_to_tray = Signal()
 
-    def __init__(self, *, window_size: tuple[int, int] = (900, 600)) -> None:
+    def __init__(
+        self,
+        *,
+        window_size: tuple[int, int] = (WINDOW_WIDTH, WINDOW_HEIGHT),
+    ) -> None:
         flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -34,6 +39,7 @@ class FramelessWindow(QWidget):
         super().__init__(None, flags)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, False)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setProperty("windowSurface", True)
 
         self.setFixedSize(*window_size)
 

@@ -41,6 +41,7 @@ except NameError:
 PROJECT_ROOT = SPEC_DIR.parent
 ICON = PROJECT_ROOT / "assets" / "icons" / "app.ico"
 ASSETS_SRC = PROJECT_ROOT / "assets"
+UI_ASSETS_SRC = PROJECT_ROOT / "app" / "ui" / "assets"
 
 block_cipher = None
 
@@ -121,6 +122,8 @@ hiddenimports += [
 # %LOCALAPPDATA%; assets are read from _MEIPASS / dist folder only.
 if ASSETS_SRC.exists():
     datas.append((str(ASSETS_SRC), "assets"))
+if UI_ASSETS_SRC.exists():
+    datas.append((str(UI_ASSETS_SRC), "app/ui/assets"))
 
 # ---------------------------------------------------------------- Analysis
 a = Analysis(  # type: ignore[name-defined]  # noqa: F821 — provided by PyInstaller runtime

@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QPoint,
     QPropertyAnimation,
+    QSize,
     Qt,
     QTimer,
     Signal,
@@ -25,7 +26,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenu,
-    QPushButton,
     QStackedWidget,
     QToolButton,
     QVBoxLayout,
@@ -35,18 +35,38 @@ from PySide6.QtWidgets import (
 from app.domain.activity.activity import ActivityState
 from app.domain.sessions.state_machine import AppState
 from app.ui.dialogs.confirm_dialog import ConfirmDialog
+from app.ui.theme import current_palette
+from app.ui.theme.effects import MOTION
+from app.ui.theme.icons import themed_icon
 from app.ui.theme.tokens import (
-    ACTIVE_TIMER_FONT_PT,
-    READY_TIMER_FONT_PT,
-    SECONDARY_TIMER_FONT_PT,
+    ACTIVE_TIMER_FONT_PX,
+    PROFILE_CHEVRON_SIZE,
+    PROFILE_ICON_SIZE,
+    PROFILE_TRIGGER_HEIGHT,
+    PROFILE_TRIGGER_MAX_WIDTH,
+    PROFILE_TRIGGER_MIN_WIDTH,
+    READY_TIMER_FONT_PX,
+    SECONDARY_TIMER_FONT_PX,
+    SPACING_2XL,
+    SPACING_CHIP_HORIZONTAL,
+    SPACING_CHIP_VERTICAL,
     SPACING_LG,
     SPACING_MD,
     SPACING_SM,
     SPACING_XL,
     SPACING_XS,
+    SPACING_XXS,
+    WORKING_CAPTION_MAX_WIDTH,
 )
 from app.ui.windows.base_window import FramelessWindow
-from app.ui.windows.components import StatusPill, TimerWidget
+from app.ui.windows.components import (
+    Button,
+    ButtonRole,
+    ButtonSize,
+    Card,
+    StatusPill,
+    TimerWidget,
+)
 from app.ui.windows.components.status_pill import PillState
 
 if TYPE_CHECKING:
@@ -91,20 +111,58 @@ class _ProfileTrigger(QToolButton):
     def __init__(self, *, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ProfileTrigger")
-        self.setText("User  \u25be")
-        self.setFixedHeight(32)
-        self.setMinimumWidth(96)
-        self.setMaximumWidth(180)
-        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.setText("")
+        self.setFixedHeight(PROFILE_TRIGGER_HEIGHT)
+        self.setMinimumWidth(PROFILE_TRIGGER_MIN_WIDTH)
+        self.setMaximumWidth(PROFILE_TRIGGER_MAX_WIDTH)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName("Account menu")
         self.setToolTip("Account menu")
+        self._display_name = "User"
+
+        self._avatar = QLabel(self)
+        self._avatar.setFixedSize(QSize(PROFILE_ICON_SIZE, PROFILE_ICON_SIZE))
+        self._avatar.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._name = QLabel(self._display_name, self)
+        self._name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._chevron = QLabel(self)
+        self._chevron.setFixedSize(QSize(PROFILE_CHEVRON_SIZE, PROFILE_CHEVRON_SIZE))
+        self._chevron.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents, True
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(SPACING_SM, 0, SPACING_SM, 0)
+        layout.setSpacing(SPACING_XS)
+        layout.addWidget(self._avatar)
+        layout.addWidget(self._name)
+        layout.addWidget(self._chevron)
+        self._refresh_icons()
+
+    def text(self) -> str:
+        return f"{self._display_name}  {chr(0x25BE)}"
 
     def set_user(self, user: DashboardUser) -> None:
-        self.setText(f"{user.first_name}  \u25be")
-        self.setToolTip(f"Account menu \u2014 {user.full_label}")
+        self._display_name = user.first_name
+        self._name.setText(self._display_name)
+        self.setToolTip(f"Account menu — {user.full_label}")
         self.setAccessibleDescription(user.full_label)
+        self._refresh_icons()
+
+    def _refresh_icons(self) -> None:
+        palette = current_palette().text_primary
+        self._avatar.setPixmap(
+            themed_icon("user-round", palette, PROFILE_ICON_SIZE).pixmap(
+                QSize(PROFILE_ICON_SIZE, PROFILE_ICON_SIZE)
+            )
+        )
+        self._chevron.setPixmap(
+            themed_icon("chevron-down", palette, PROFILE_CHEVRON_SIZE).pixmap(
+                QSize(PROFILE_CHEVRON_SIZE, PROFILE_CHEVRON_SIZE)
+            )
+        )
 
 
 class DashboardWindow(FramelessWindow):
@@ -166,15 +224,18 @@ class DashboardWindow(FramelessWindow):
         working_caption = QLabel("Work-session activity is recorded while you work.")
         working_caption.setObjectName("PanelCaption")
         working_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        working_caption.setMaximumWidth(600)
+        working_caption.setMaximumWidth(WORKING_CAPTION_MAX_WIDTH)
 
         # READY page
-        self._check_in_button = QPushButton("Check In")
-        self._check_in_button.setObjectName("PrimaryCta")
-        self._check_in_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._check_in_button = Button(
+            "Check In",
+            role=ButtonRole.PRIMARY,
+            size=ButtonSize.LARGE,
+            object_name="PrimaryCta",
+        )
         self._check_in_button.clicked.connect(self._on_check_in)
         self._ready_timer = TimerWidget()
-        self._ready_timer.set_font_size(READY_TIMER_FONT_PT)
+        self._ready_timer.set_font_size(READY_TIMER_FONT_PX)
 
         ready = self._page(
             subtitle="Ready to start your day?",
@@ -186,16 +247,12 @@ class DashboardWindow(FramelessWindow):
         ready.setObjectName("ReadyPage")
 
         # WORKING page
-        self._break_button = QPushButton("Take a Break")
-        self._break_button.setProperty("role", "secondary")
-        self._break_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._break_button = Button("Take a Break", role=ButtonRole.SECONDARY)
         self._break_button.clicked.connect(self._on_take_break)
-        self._checkout_button = QPushButton("Check Out")
-        self._checkout_button.setProperty("role", "danger")
-        self._checkout_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._checkout_button = Button("Check Out", role=ButtonRole.DANGER)
         self._checkout_button.clicked.connect(self._on_check_out)
         self._working_timer = TimerWidget()
-        self._working_timer.set_font_size(ACTIVE_TIMER_FONT_PT)
+        self._working_timer.set_font_size(ACTIVE_TIMER_FONT_PX)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(SPACING_MD)
@@ -217,12 +274,15 @@ class DashboardWindow(FramelessWindow):
         working.setObjectName("WorkingPage")
 
         # BREAK page
-        self._resume_button = QPushButton("Resume")
-        self._resume_button.setObjectName("PrimaryCta")
-        self._resume_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._resume_button = Button(
+            "Resume",
+            role=ButtonRole.PRIMARY,
+            size=ButtonSize.LARGE,
+            object_name="PrimaryCta",
+        )
         self._resume_button.clicked.connect(self._on_resume)
         self._break_timer = TimerWidget()
-        self._break_timer.set_font_size(SECONDARY_TIMER_FONT_PT)
+        self._break_timer.set_font_size(SECONDARY_TIMER_FONT_PX)
         break_caption = QLabel("Break time is separate from work time.")
         break_caption.setObjectName("PanelCaption")
         break_caption.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -237,12 +297,15 @@ class DashboardWindow(FramelessWindow):
         break_page.setObjectName("BreakPage")
 
         # COMPLETED page
-        self._again_button = QPushButton("Check In")
-        self._again_button.setObjectName("PrimaryCta")
-        self._again_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._again_button = Button(
+            "Check In",
+            role=ButtonRole.PRIMARY,
+            size=ButtonSize.LARGE,
+            object_name="PrimaryCta",
+        )
         self._again_button.clicked.connect(self._on_check_in)
         self._completed_timer = TimerWidget()
-        self._completed_timer.set_font_size(SECONDARY_TIMER_FONT_PT)
+        self._completed_timer.set_font_size(SECONDARY_TIMER_FONT_PX)
         self._checked_out_label = QLabel()
         self._checked_out_label.setObjectName("PanelCaption")
         self._checked_out_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -280,9 +343,9 @@ class DashboardWindow(FramelessWindow):
         page.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         layout = QVBoxLayout(page)
         layout.setContentsMargins(
-            SPACING_XL * 2,
+            SPACING_2XL,
             SPACING_LG,
-            SPACING_XL * 2,
+            SPACING_2XL,
             SPACING_XL,
         )
         layout.setSpacing(SPACING_SM)
@@ -353,11 +416,11 @@ class DashboardWindow(FramelessWindow):
         # Live "Last activity" label — reflects idle vs active without raw input.
         if view.state is AppState.WORKING:
             if view.activity_state is ActivityState.IDLE:
-                self._last_activity.setText("Idle — away from input")
+                self._last_activity.setText("Idle - away from input")
             else:
                 self._last_activity.setText("Last activity: now")
         else:
-            self._last_activity.setText("Last activity: —")
+            self._last_activity.setText("Last activity: none")
 
         if view.state is AppState.WORKING:
             self._working_timer.set_elapsed(view.elapsed_work_seconds)
@@ -487,7 +550,7 @@ class DashboardWindow(FramelessWindow):
         effect = QGraphicsOpacityEffect(widget)
         widget.setGraphicsEffect(effect)
         animation = QPropertyAnimation(effect, b"opacity", widget)
-        animation.setDuration(220)
+        animation.setDuration(MOTION.page_duration_ms)
         animation.setStartValue(0.0)
         animation.setEndValue(1.0)
         animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
@@ -521,7 +584,7 @@ class _ChipsRow(QWidget):
         self._values: dict[str, QLabel] = {}
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
+        layout.setSpacing(SPACING_SM)
         layout.addWidget(self._chip("active", "Active"))
         layout.addWidget(self._chip("idle", "Idle"))
         layout.addWidget(self._chip("break", "Break"))
@@ -532,8 +595,7 @@ class _ChipsRow(QWidget):
         self._values["break"].setText(f"{break_minutes}m")
 
     def _chip(self, key: str, label: str) -> QWidget:
-        c = QWidget()
-        c.setObjectName("Chip")
+        c = Card(object_name="Chip")
         value = QLabel("0m")
         value.setObjectName("ChipValue")
         value.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -541,8 +603,13 @@ class _ChipsRow(QWidget):
         name.setObjectName("ChipLabel")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay = QVBoxLayout(c)
-        lay.setContentsMargins(20, 10, 20, 10)
-        lay.setSpacing(2)
+        lay.setContentsMargins(
+            SPACING_CHIP_HORIZONTAL,
+            SPACING_CHIP_VERTICAL,
+            SPACING_CHIP_HORIZONTAL,
+            SPACING_CHIP_VERTICAL,
+        )
+        lay.setSpacing(SPACING_XXS)
         lay.addWidget(value)
         lay.addWidget(name)
         self._values[key] = value

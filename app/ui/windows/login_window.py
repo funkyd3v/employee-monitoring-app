@@ -11,27 +11,31 @@ friendly prose, never raw exception text.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (
-    QGraphicsDropShadowEffect,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from app.ui.theme import current_palette
+from app.ui.theme.effects import ELEVATION_CARD
 from app.ui.theme.tokens import (
-    ACTIVE_PALETTE,
+    BRAND_MARK_SIZE_LARGE,
+    LOGIN_CARD_MAX_WIDTH,
+    LOGIN_SPINNER_SIZE,
     SPACING_LG,
     SPACING_MD,
     SPACING_SM,
     SPACING_XL,
 )
 from app.ui.windows.base_window import FramelessWindow
-from app.ui.windows.components import BrandMark, FormField, Spinner
+from app.ui.windows.components import (
+    BrandMark,
+    Button,
+    ButtonRole,
+    ButtonSize,
+    Card,
+    FormField,
+    Spinner,
+)
 
-_CONNECTION_LOCAL = "Offline-first \u00b7 data stays on this device"
+_CONNECTION_LOCAL = "Offline-first - data stays on this device"
 
 
 class LoginWindow(FramelessWindow):
@@ -50,18 +54,11 @@ class LoginWindow(FramelessWindow):
         center = QWidget(body)
         center.setObjectName("LoginCenter")
 
-        card = QWidget(center)
-        card.setObjectName("LoginCard")
-        card.setMaximumWidth(430)
+        card = Card(object_name="LoginCard", parent=center)
+        card.setMaximumWidth(LOGIN_CARD_MAX_WIDTH)
+        card.apply_shadow(palette=current_palette(), elevation=ELEVATION_CARD)
 
-        shadow = QGraphicsDropShadowEffect(card)
-        shadow.setBlurRadius(40)
-        shadow.setOffset(0, 8)
-        shadow.setColor(QColor(ACTIVE_PALETTE.shadow))
-        card.setGraphicsEffect(shadow)
-
-        brand = BrandMark(56)
-        brand.setFixedSize(56, 56)
+        brand = BrandMark(BRAND_MARK_SIZE_LARGE)
 
         title = QLabel("Welcome back")
         title.setObjectName("PanelTitle")
@@ -78,10 +75,14 @@ class LoginWindow(FramelessWindow):
         self._email.return_pressed.connect(self._on_submit_clicked)
         self._password.return_pressed.connect(self._on_submit_clicked)
 
-        self._spinner = Spinner(size=18)
-        self._submit_button = QPushButton("Sign In")
-        self._submit_button.setObjectName("PrimaryCta")
-        self._submit_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._spinner = Spinner(size=LOGIN_SPINNER_SIZE)
+        self._submit_button = Button(
+            "Sign In",
+            role=ButtonRole.PRIMARY,
+            size=ButtonSize.LARGE,
+            object_name="PrimaryCta",
+        )
+        self._submit_button.setAccessibleName("Sign in")
         self._submit_button.clicked.connect(self._on_submit_clicked)
 
         button_row = QHBoxLayout()
@@ -179,7 +180,7 @@ class LoginWindow(FramelessWindow):
         return self._password
 
     @property
-    def sign_in_button(self) -> QPushButton:
+    def sign_in_button(self) -> Button:
         return self._submit_button
 
     # ── Internal ───────────────────────────────────────────────────────────

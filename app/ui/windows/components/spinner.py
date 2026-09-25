@@ -13,7 +13,9 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
-from app.ui.theme.tokens import ACTIVE_PALETTE
+from app.ui.theme import current_palette
+from app.ui.theme.effects import MOTION
+from app.ui.theme.tokens import SPINNER_SIZE
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QPaintEvent
@@ -25,22 +27,22 @@ class Spinner(QWidget):
     def __init__(
         self,
         *,
-        size: int = 20,
+        size: int = SPINNER_SIZE,
         color: str | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._color = QColor(color) if color else QColor(ACTIVE_PALETTE.accent)
+        self._color = QColor(color) if color else QColor(current_palette().accent)
         self._angle = 0
         self.setFixedSize(size, size)
         self.setHidden(True)
 
         self._timer = QTimer(self)
-        self._timer.setInterval(16)  # ~60fps rotation
+        self._timer.setInterval(MOTION.spinner_interval_ms)
         self._timer.timeout.connect(self._rotate)
 
     def _rotate(self) -> None:
-        self._angle = (self._angle + 9) % 360
+        self._angle = (self._angle + MOTION.spinner_angle_step) % 360
         self.update()
 
     def start(self) -> None:

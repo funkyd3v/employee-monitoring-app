@@ -14,10 +14,19 @@ from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QHBoxLayout, QLabel, QWidget
 
-from app.ui.theme.tokens import ACTIVE_PALETTE
+from app.ui.theme import current_palette
+from app.ui.theme.effects import MOTION
+from app.ui.theme.tokens import (
+    PILL_DOT_RADIUS,
+    SPACING_INPUT,
+    SPACING_STATUS_GAP,
+    SPACING_STATUS_VERTICAL,
+)
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QPaintEvent
+
+    from app.ui.theme.tokens import Palette
 
 _TEXTS: dict[str, str] = {
     "ACTIVE": "Active",
@@ -60,12 +69,12 @@ class _Dot(QWidget):
         painter.end()
 
 
-def _state_color(state: PillState) -> QColor:
+def _state_color(state: PillState, palette: Palette) -> QColor:
     if state is PillState.ACTIVE:
-        return QColor(ACTIVE_PALETTE.success)
+        return QColor(palette.success)
     if state is PillState.IDLE:
-        return QColor(ACTIVE_PALETTE.warning)
-    return QColor(ACTIVE_PALETTE.text_secondary)
+        return QColor(palette.warning)
+    return QColor(palette.text_secondary)
 
 
 class StatusPill(QWidget):
@@ -75,6 +84,7 @@ class StatusPill(QWidget):
         super().__init__(parent)
         self.setObjectName("StatusPill")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._palette = current_palette()
         self._state = PillState.OFF
 
         self._opacity = QGraphicsOpacityEffect(self)
@@ -83,20 +93,25 @@ class StatusPill(QWidget):
         self.setProperty("pillState", self._state.value)
 
         self._pulse = QPropertyAnimation(self._opacity, b"opacity", self)
-        self._pulse.setDuration(1800)
+        self._pulse.setDuration(MOTION.pulse_duration_ms)
         self._pulse.setStartValue(1.0)
         self._pulse.setKeyValueAt(0.5, 0.78)
         self._pulse.setEndValue(1.0)
         self._pulse.setLoopCount(-1)
         self._pulse.setEasingCurve(QEasingCurve.Type.InOutSine)
 
-        self._dot = _Dot(_state_color(self._state))
+        self._dot = _Dot(_state_color(self._state, self._palette), PILL_DOT_RADIUS)
         self._label = QLabel(_TEXTS[self._state.value])
         self._label.setObjectName("PillText")
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 5, 12, 5)
-        layout.setSpacing(8)
+        layout.setContentsMargins(
+            SPACING_INPUT,
+            SPACING_STATUS_VERTICAL,
+            SPACING_INPUT,
+            SPACING_STATUS_VERTICAL,
+        )
+        layout.setSpacing(SPACING_STATUS_GAP)
         layout.addWidget(self._dot)
         layout.addWidget(self._label)
 
@@ -110,7 +125,7 @@ class StatusPill(QWidget):
             return
         self._state = state
         self.setProperty("pillState", state.value)
-        self._dot.set_color(_state_color(state))
+        self._dot.set_color(_state_color(state, self._palette))
         self._label.setText(_TEXTS[state.value])
         self.setToolTip(self._tooltip_for(state))
         self.style().unpolish(self)
@@ -121,11 +136,16 @@ class StatusPill(QWidget):
             self._pulse.stop()
             self._opacity.setOpacity(1.0)
 
+    def set_palette(self, palette: Palette) -> None:
+        self._palette = palette
+        self._dot.set_color(_state_color(self._state, palette))
+        self.update()
+
     @staticmethod
     def _tooltip_for(state: PillState) -> str:
         return {
-            PillState.ACTIVE: "You are active — monitoring is running.",
-            PillState.IDLE: "Idle detected — input has not been seen for a while.",
-            PillState.BREAK: "On break — monitoring is paused.",
+            PillState.ACTIVE: "You are active - monitoring is running.",
+            PillState.IDLE: "Idle detected - input has not been seen for a while.",
+            PillState.BREAK: "On break - monitoring is paused.",
             PillState.OFF: "Currently checked out.",
         }[state]
