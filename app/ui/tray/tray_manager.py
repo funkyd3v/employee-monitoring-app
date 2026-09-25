@@ -1,8 +1,8 @@
 """System tray (docs/UI_SPEC.md §System tray).
 
 State is surfaced through a colored icon + tooltip and a context menu with
-Open Dashboard, current status, session actions (Take a Break / Check Out),
-Logout, and Exit. No binary assets exist yet, so tray icons are painted from
+Open Dashboard, current status, session actions (Take a Break / Resume / Check
+Out), Logout, and Exit. No binary assets exist yet, so tray icons are painted from
 theme tokens (privacy/status transparency: the employee always knows whether
 monitoring is running, per docs/SECURITY_PRIVACY.md §checklist).
 """
@@ -87,6 +87,7 @@ class TrayManager(QObject):
 
     open_dashboard = Signal()
     take_break = Signal()
+    resume = Signal()
     check_out = Signal()
     logout = Signal()
     exit_requested = Signal()
@@ -122,6 +123,9 @@ class TrayManager(QObject):
         self._break_action = self._menu.addAction("Take a Break")
         self._break_action.triggered.connect(self.take_break.emit)
 
+        self._resume_action = self._menu.addAction("Resume")
+        self._resume_action.triggered.connect(self.resume.emit)
+
         self._checkout_action = self._menu.addAction("Check Out")
         self._checkout_action.triggered.connect(self.check_out.emit)
         self._menu.addSeparator()
@@ -151,6 +155,7 @@ class TrayManager(QObject):
         self._tray.setToolTip(f"{APP_NAME} \u2014 {_state_label(state)}")
         self._status_action.setText(f"Current Status: {_state_label(state)}")
         self._break_action.setEnabled(view.can_take_break)
+        self._resume_action.setEnabled(view.can_resume)
         self._checkout_action.setEnabled(view.can_check_out)
 
     def show(self) -> None:

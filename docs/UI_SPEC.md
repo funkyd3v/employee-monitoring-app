@@ -162,6 +162,7 @@ Open Dashboard
 Current Status: Checked In
 ────────────────────
 Take a Break
+Resume
 Check Out
 ────────────────────
 Logout

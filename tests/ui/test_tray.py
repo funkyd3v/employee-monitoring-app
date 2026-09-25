@@ -61,11 +61,16 @@ def test_tray_manager_action_enabled_from_projection() -> None:
         )
     )
     assert manager._break_action.isEnabled()
+    assert not manager._resume_action.isEnabled()
     assert manager._checkout_action.isEnabled()
     assert manager._status_action.text() == "Current Status: Checked In"
 
+    manager.set_view(_view(AppState.BREAK, can_resume=True, can_check_out=True))
+    assert manager._resume_action.isEnabled()
+
     manager.set_view(_view(AppState.READY))
     assert not manager._break_action.isEnabled()
+    assert not manager._resume_action.isEnabled()
     assert not manager._checkout_action.isEnabled()
     assert manager._status_action.text() == "Current Status: Checked Out"
 
@@ -75,6 +80,10 @@ def test_tray_manager_signals(qtbot: QtBot) -> None:
 
     with qtbot.waitSignal(manager.open_dashboard, timeout=300):
         manager._open_action.trigger()
+
+    manager.set_view(_view(AppState.BREAK, can_resume=True))
+    with qtbot.waitSignal(manager.resume, timeout=300):
+        manager._resume_action.trigger()
 
     with qtbot.waitSignal(manager.exit_requested, timeout=300):
         manager._exit_action.trigger()
