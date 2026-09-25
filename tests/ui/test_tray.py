@@ -14,9 +14,15 @@ import pytest
 from app.domain.activity.activity import ActivityState
 from app.domain.sessions.state_machine import AppState
 from app.services.session_service import SessionView
-from app.ui.tray.tray_manager import TrayManager, TrayState, tray_state_for
+from app.ui.tray.tray_manager import (
+    TrayManager,
+    TrayState,
+    _paint_tray_icon,
+    tray_state_for,
+)
 
 if TYPE_CHECKING:
+    from PySide6.QtGui import QImage
     from pytestqt.qtbot import QtBot
 
 _AT = datetime(2026, 1, 5, 12, 0, tzinfo=UTC)
@@ -48,6 +54,31 @@ def test_tray_state_mapping(state: AppState, expected: TrayState) -> None:
 def test_working_is_checked_in_even_when_idle() -> None:
     view = _view(AppState.WORKING, activity_state=ActivityState.IDLE)
     assert tray_state_for(view) is TrayState.CHECKED_IN
+
+
+def _contains_color(image: QImage) -> bool:
+    for y in range(0, image.height(), 8):
+        for x in range(0, image.width(), 8):
+            red, green, blue, _ = image.pixelColor(x, y).getRgb()
+            if max(red, green, blue) - min(red, green, blue) > 2:
+                return True
+    return False
+
+
+def test_tray_icon_uses_canonical_app_artwork(qapp: object) -> None:
+    image = _paint_tray_icon(TrayState.CHECKED_IN).pixmap(256, 256).toImage()
+
+    assert not image.isNull()
+    assert _contains_color(image)
+
+
+@pytest.mark.parametrize("state", [TrayState.ON_BREAK, TrayState.CHECKED_OUT])
+def test_inactive_tray_icons_are_gray(qapp: object, state: TrayState) -> None:
+    image = _paint_tray_icon(state).pixmap(256, 256).toImage()
+
+    assert not image.isNull()
+    assert image.hasAlphaChannel()
+    assert not _contains_color(image)
 
 
 def test_tray_manager_action_enabled_from_projection(qapp: object) -> None:

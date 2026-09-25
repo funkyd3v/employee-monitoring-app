@@ -1,18 +1,21 @@
 """System tray (docs/UI_SPEC.md §System tray).
 
-State is surfaced through a colored icon + tooltip and a context menu with
+State is surfaced through the canonical application icon + tooltip and a context menu with
 Open Dashboard, current status, session actions (Check In / Take a Break /
-Resume / Check Out), Logout, and Exit. No binary assets exist yet, so tray icons
-are painted from theme tokens (privacy/status transparency: the employee always
+Resume / Check Out), Logout, and Exit. The icon is rendered in grayscale when
+checked out or on break (privacy/status transparency: the employee always
 knows whether monitoring is running, per docs/SECURITY_PRIVACY.md §checklist).
 """
 
 from __future__ import annotations
 
+import sys
 from enum import StrEnum
+from functools import lru_cache
+from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
+from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from app.core.logging import get_logger
@@ -22,7 +25,6 @@ _logger = get_logger("ui.tray")
 from app.config.constants import APP_NAME
 from app.domain.sessions.state_machine import AppState
 from app.services.session_service import SessionView
-from app.ui.theme.tokens import ACTIVE_PALETTE
 
 
 class TrayState(StrEnum):
@@ -42,44 +44,39 @@ def tray_state_for(view: SessionView) -> TrayState:
     return TrayState.CHECKED_OUT
 
 
-def _paint_tray_icon(state: TrayState) -> QPixmap:
-    """Draw a 32px tray glyph at 2x device-pixel resolution."""
-    size = 64
-    pixmap = QPixmap(size, size)
-    pixmap.setDevicePixelRatio(2.0)
-    pixmap.fill(Qt.GlobalColor.transparent)
+def _asset_path(filename: str) -> Path:
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    root = (
+        Path(bundle_root)
+        if isinstance(bundle_root, str)
+        else Path(__file__).resolve().parents[3]
+    )
+    return root / "assets" / "icons" / filename
 
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-    center = size // 4
-    colors = {
-        TrayState.CHECKED_IN: ACTIVE_PALETTE.success,
-        TrayState.ON_BREAK: ACTIVE_PALETTE.warning,
-        TrayState.CHECKED_OUT: ACTIVE_PALETTE.text_secondary,
-        TrayState.ATTENTION: ACTIVE_PALETTE.danger,
-    }
-    color = QColor(colors[state])
+@lru_cache(maxsize=1)
+def _app_icon() -> QIcon:
+    return QIcon(str(_asset_path("app.ico")))
 
-    if state is TrayState.CHECKED_OUT:
-        pen = QPen(color, 5)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(center - 14, center - 14, 28, 28)
-    elif state is TrayState.ON_BREAK:
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(color)
-        painter.drawEllipse(center - 14, center - 14, 28, 28)
-        painter.setBrush(Qt.GlobalColor.transparent)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
-        painter.drawRect(center - 14, center, 28, 14)
-    else:
-        painter.setPen(QPen(QColor(colors[state]), 1, Qt.PenStyle.SolidLine))
-        painter.setBrush(color)
-        painter.drawEllipse(center - 12, center - 12, 24, 24)
 
-    painter.end()
-    return pixmap
+@lru_cache(maxsize=1)
+def _gray_app_icon() -> QIcon:
+    image = _app_icon().pixmap(256, 256).toImage()
+    image = image.convertToFormat(QImage.Format.Format_ARGB32)
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            gray = round(
+                color.red() * 0.299 + color.green() * 0.587 + color.blue() * 0.114
+            )
+            image.setPixelColor(x, y, QColor(gray, gray, gray, color.alpha()))
+    return QIcon(QPixmap.fromImage(image))
+
+
+def _paint_tray_icon(state: TrayState) -> QIcon:
+    if state in (TrayState.ON_BREAK, TrayState.CHECKED_OUT):
+        return _gray_app_icon()
+    return _app_icon()
 
 
 class TrayManager(QObject):
@@ -155,7 +152,7 @@ class TrayManager(QObject):
         """Refresh icon/tooltip/menu from the latest session projection."""
         self._view = view
         state = tray_state_for(view)
-        self._tray.setIcon(QIcon(_paint_tray_icon(state)))
+        self._tray.setIcon(_paint_tray_icon(state))
         self._tray.setToolTip(f"{APP_NAME} \u2014 {_state_label(state)}")
         self._status_action.setText(f"Current Status: {_state_label(state)}")
         self._check_in_action.setEnabled(view.can_check_in)
