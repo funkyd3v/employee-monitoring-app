@@ -47,6 +47,7 @@ class ScreenshotWorker(QObject):
         self._scheduled_start: datetime | None = None
         self._interval: timedelta | None = None
         self._n = -1  # last emitted index
+        self._paused_at: datetime | None = None
         self._attempt = 0
         self._timer: QTimer | None = None
 
@@ -80,11 +81,30 @@ class ScreenshotWorker(QObject):
     @Slot()
     def pause(self) -> None:
         """Pause captures (BREAK / sleep)."""
+        if self._paused:
+            return
+        from app.core.clock import utc_now
+
         self._paused = True
+        self._paused_at = utc_now()
         _logger.info("screenshot worker paused")
 
     @Slot()
     def resume(self) -> None:
+        if not self._paused:
+            return
+        from app.core.clock import utc_now
+
+        now = utc_now()
+        if (
+            self._paused_at is not None
+            and self._scheduled_start is not None
+            and self._interval is not None
+        ):
+            paused_for = now - self._paused_at
+            if paused_for > timedelta(0):
+                self._scheduled_start += paused_for
+        self._paused_at = None
         self._paused = False
         _logger.info("screenshot worker resumed")
 
@@ -101,6 +121,7 @@ class ScreenshotWorker(QObject):
             self._interval = timedelta(seconds=interval_seconds)
             self._n = -1
             self._paused = False
+            self._paused_at = None
             _logger.info(
                 "screenshot schedule set start=%s interval=%ss",
                 scheduled_start,
