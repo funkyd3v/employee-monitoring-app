@@ -34,6 +34,11 @@ unit test. Any new worker needs at least one failure-mode test.
       corrupting the active session (recovery pass verified).
 - [ ] Window cannot be resized or maximized; only minimize/close are
       available; close-while-working minimizes to tray.
+- [ ] With the app in the tray, a single click on the tray icon, a double
+      click on the tray icon, and a double click on the desktop shortcut
+      all bring the window back (hidden *and* minimized states).
+- [ ] Launching the app twice never yields two windows or two database
+      writers; the second launch opens the first instance's window.
 - [ ] Dark/light theme toggle applies instantly and persists.
 - [ ] App installs and uninstalls cleanly via Windows "Apps & Features,"
       with documented behavior for local data retention on uninstall.

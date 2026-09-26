@@ -28,7 +28,7 @@ from app.ui.windows.dashboard_window import DashboardWindow
 from app.ui.windows.login_window import LoginWindow
 
 if TYPE_CHECKING:
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QWidget
 
     from app.core.container import Container
     from app.services.auth_service import AuthService
@@ -42,6 +42,7 @@ class _LoginWorker(QObject):
 
     succeeded = Signal(object)
     failed = Signal(object)
+    finished = Signal()
 
     def __init__(
         self,
@@ -62,12 +63,21 @@ class _LoginWorker(QObject):
             user = self._auth.login(email=self._email, password=self._password)
         except AuthenticationError as exc:
             self.failed.emit(exc)
-            return
-        self.succeeded.emit(user)
+        else:
+            self.succeeded.emit(user)
+        finally:
+            # Always announced, so the owner can retire the thread even when
+            # the provider raises something unexpected.
+            self.finished.emit()
 
 
 class UiController(QObject):
     """Wires windows + tray to the container's services and the Qt loop."""
+
+    # Carries the window that was just presented. The composition root
+    # listens for it to apply OS-level activation (Win32 foreground rules);
+    # UI code itself never talks to the OS.
+    window_presented = Signal(object)
 
     def __init__(
         self,
@@ -101,7 +111,7 @@ class UiController(QObject):
         self.dashboard.logout_requested.connect(self._logout)
         self.login.closed_to_tray.connect(self._hide_login_only)
 
-        self.tray.open_dashboard.connect(self._show_dashboard)
+        self.tray.open_dashboard.connect(self._open_from_tray)
         self.tray.check_in.connect(self._tray_check_in)
         self.tray.take_break.connect(self._tray_take_break)
         self.tray.resume.connect(self._tray_resume)
@@ -121,9 +131,17 @@ class UiController(QObject):
     def shutdown(self) -> None:
         """Park worker threads and hide windows (no auth teardown here)."""
         self._activity_poller.stop()
-        if self._thread is not None and self._thread.isRunning():
-            self._thread.quit()
-            self._thread.wait(2000)
+        # Defensive: a thread whose C++ object was already retired raises on
+        # access, and shutdown must never be the thing that takes the app
+        # down (docs/ENGINEERING_RULES.md §Key engineering decisions).
+        try:
+            if self._thread is not None and self._thread.isRunning():
+                self._thread.quit()
+                self._thread.wait(2000)
+        except RuntimeError:
+            self._logger.debug("login thread already retired", exc_info=True)
+        self._thread = None
+        self._worker = None
         self.login.hide()
         self.dashboard.hide()
         self.tray.hide()
@@ -132,8 +150,7 @@ class UiController(QObject):
     def _enter_login(self) -> None:
         self.dashboard.hide()
         self.login.reset_form()
-        self.login.show()
-        self.login.raise_()
+        self.login.present()
 
     def _enter_dashboard(self, user: AuthenticatedUser) -> None:
         self.login.hide()
@@ -148,20 +165,47 @@ class UiController(QObject):
         view = self._sessions.tick()
         self.dashboard.set_view(view)
         self.tray.set_view(view)
-        self.dashboard.show()
-        self.dashboard.raise_()
+        self.dashboard.present()
         self._activity_poller.start()
 
-    def _show_dashboard(self) -> None:
-        if not self._auth.is_authenticated():
-            return
-        if not self.dashboard.isVisible():
-            self.dashboard.show()
-        self.dashboard.raise_()
-        self.dashboard.activateWindow()
-        view = self._sessions.tick()
-        self.dashboard.set_view(view)
-        self.tray.set_view(view)
+    def show_main_window(self) -> QWidget:
+        """Surface the app's main window and return it.
+
+        The single entry point for "the user asked for the app", whatever
+        asked: a tray click, the tray menu, or a second launch relayed by
+        :class:`~app.infrastructure.system.activation.InstanceActivator`.
+        Shows the login screen when nobody is signed in, so the gesture can
+        never end in a dead click.
+        """
+        window = (
+            self._show_login_window()
+            if not self._auth.is_authenticated()
+            else self._show_dashboard_window()
+        )
+        self.window_presented.emit(window)
+        return window
+
+    def _show_login_window(self) -> QWidget:
+        self.dashboard.hide()
+        self.login.present()
+        return self.login
+
+    def _show_dashboard_window(self) -> QWidget:
+        needs_refresh = not self.dashboard.isVisible()
+        self.dashboard.present()
+        if needs_refresh:
+            # Recompute from persisted state on the way in — the projection
+            # is the single source of truth for the timer, never the widget
+            # (docs/ENGINEERING_RULES.md §Timer Correctness). An already
+            # visible window is kept fresh by the activity poller instead.
+            view = self._sessions.tick()
+            self.dashboard.set_view(view)
+            self.tray.set_view(view)
+        return self.dashboard
+
+    @Slot()
+    def _open_from_tray(self) -> None:
+        self.show_main_window()
 
     def _hide_login_only(self) -> None:
         # Login close-to-tray keeps the app alive (Exit lives in the tray).
@@ -177,10 +221,17 @@ class UiController(QObject):
         worker = _LoginWorker(self._auth, email, password)
         worker.moveToThread(thread)
 
+        # Canonical one-shot worker lifetime (Qt "Worker Threads" pattern):
+        # the worker retires itself *in its own thread*, then the thread
+        # quits and is deleted. Without the in-thread deleteLater the worker
+        # would be destroyed from the main thread after its thread died,
+        # which crashes the process at shutdown.
         thread.started.connect(worker.run)
         worker.succeeded.connect(self._on_login_succeeded)
         worker.failed.connect(self._on_login_failed)
-        worker.destroyed.connect(self._release_worker)
+        worker.finished.connect(self._release_worker)
+        worker.finished.connect(worker.deleteLater)
+        worker.finished.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
 
         self._thread = thread

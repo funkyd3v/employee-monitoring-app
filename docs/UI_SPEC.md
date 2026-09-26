@@ -20,6 +20,24 @@ purpose.
   session. An explicit Exit is available only from the tray menu, with a
   confirmation dialog if a session is running.
 
+### Bringing the window back
+
+The window spends most of its life hidden in the tray, so "show me the app"
+must never end in a dead gesture. Three gestures, one outcome — the window
+un-minimizes if needed, shows, and takes focus (`FramelessWindow.present()`):
+
+| Gesture | Behavior |
+|---|---|
+| Single click on the tray icon | Opens the app (double click does the same, once) |
+| `Open Dashboard` in the tray menu | Opens the app |
+| Launching the app again (desktop shortcut, pinned icon) | The already-running instance opens its window; the second copy exits quietly |
+
+Launching twice never produces a second window: only one instance may own the
+data directory, so the losing copy hands a "show yourself" request to the
+winner over a per-data-dir local named pipe and exits with code 0
+(`app/infrastructure/system/activation.py`). Windows foreground rules are
+worked around in the composition root (`main.py`), never in UI code.
+
 ## Login screen
 
 ```
@@ -171,7 +189,10 @@ Exit
 ```
 
 The agent stays active in the tray if the window is closed while a
-session is running (see Window behavior above).
+session is running (see Window behavior above). Clicking the icon itself
+(single or double click) opens the app — the menu is for actions, the icon
+is for bringing the app back. A click burst is coalesced so one physical
+double click opens the window once.
 
 ## Accessibility
 

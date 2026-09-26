@@ -3,6 +3,9 @@
 ``tray_state_for`` maps projections to icon states and is pure; the
 :class:`TrayManager` enables/disables actions from the same projection so the
 tray can never offer an action the machine rejects.
+
+Clicking the icon is also an "open the app" gesture — a single click and a
+double click both surface the window, without the right-click menu.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from app.ui.tray.tray_manager import (
     _paint_tray_icon,
     tray_state_for,
 )
+from PySide6.QtWidgets import QSystemTrayIcon
 
 if TYPE_CHECKING:
     from PySide6.QtGui import QImage
@@ -129,3 +133,60 @@ def test_tray_manager_signals(qtbot: QtBot) -> None:
 
     with qtbot.waitSignal(manager.exit_requested, timeout=300):
         manager._exit_action.trigger()
+
+
+def test_clicking_the_tray_icon_opens_the_app(qtbot: QtBot) -> None:
+    """The icon is wired to the app, not just to its own handler."""
+    manager = TrayManager()
+
+    with qtbot.waitSignal(manager.open_dashboard, timeout=2000):
+        manager.tray_icon.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        QSystemTrayIcon.ActivationReason.Trigger,
+        QSystemTrayIcon.ActivationReason.DoubleClick,
+    ],
+)
+def test_single_and_double_click_both_open_the_app(
+    qtbot: QtBot, reason: QSystemTrayIcon.ActivationReason
+) -> None:
+    manager = TrayManager()
+
+    with qtbot.waitSignal(manager.open_dashboard, timeout=2000):
+        manager.handle_activated(reason)
+
+
+def test_double_click_opens_the_app_only_once(qtbot: QtBot) -> None:
+    """Windows reports a double click as Trigger *and* DoubleClick."""
+    manager = TrayManager()
+
+    with qtbot.waitSignal(manager.open_dashboard, timeout=2000):
+        manager.handle_activated(QSystemTrayIcon.ActivationReason.Trigger)
+        manager.handle_activated(QSystemTrayIcon.ActivationReason.DoubleClick)
+
+    with qtbot.assertNotEmitted(manager.open_dashboard):
+        qtbot.wait(500)
+
+
+def test_non_click_tray_gestures_do_not_open_the_app(qtbot: QtBot) -> None:
+    """Middle click and context-menu reasons are not "open the app"."""
+    manager = TrayManager()
+
+    with qtbot.assertNotEmitted(manager.open_dashboard):
+        manager.handle_activated(QSystemTrayIcon.ActivationReason.MiddleClick)
+        manager.handle_activated(QSystemTrayIcon.ActivationReason.Context)
+        qtbot.wait(500)
+
+
+def test_hiding_the_tray_cancels_a_pending_open(qtbot: QtBot) -> None:
+    """A click landing just before Exit must not re-open the window."""
+    manager = TrayManager()
+    manager.handle_activated(QSystemTrayIcon.ActivationReason.Trigger)
+
+    manager.hide()
+
+    with qtbot.assertNotEmitted(manager.open_dashboard):
+        qtbot.wait(500)

@@ -71,13 +71,20 @@ Check "No console window (windowed build)" {
     Write-Host "  (manual: launch exe — no black console should flash)"
 }
 
-Check "Single-instance guard (second launch exits 1)" {
+Check "Second launch opens the running instance (never a second window)" {
     $p1 = Start-Process -FilePath $ExePath -PassThru -WindowStyle Hidden
-    Start-Sleep -Seconds 3
-    $p2 = Start-Process -FilePath $ExePath -ArgumentList "--version" -PassThru -WindowStyle Hidden
-    $p2.WaitForExit(8000) | Out-Null
-    if ($p2.ExitCode -ne 0 -and $p2.ExitCode -ne 1) { Write-Host "  second instance exit: $($p2.ExitCode) (expected 1 if lock held)" -ForegroundColor DarkYellow }
-    else { Write-Host "  second instance exit: $($p2.ExitCode)" }
+    Start-Sleep -Seconds 5
+    # A second launch must hand off to the instance already in the tray and
+    # exit quietly (docs/UI_SPEC.md §Window behavior). It must never open a
+    # second window: two writers on one SQLite file is a corruption risk.
+    $p2 = Start-Process -FilePath $ExePath -PassThru -WindowStyle Hidden
+    if (-not $p2.WaitForExit(20000)) {
+        $p2.Kill()
+        throw "second launch kept running — it started a second instance"
+    }
+    if ($p2.ExitCode -ne 0) { throw "second launch exit code $($p2.ExitCode) (expected 0)" }
+    Write-Host "  second launch exited 0 after handing off" -ForegroundColor Green
+    Write-Host "  (manual: the first instance's window should now be in front)" -ForegroundColor DarkGray
     try { $p1.Kill() } catch {}
     $p1.WaitForExit(3000) | Out-Null
 }

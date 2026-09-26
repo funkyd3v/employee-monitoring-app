@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QApplication
 from app.config.constants import APP_VERSION
 from app.core.container import bootstrap_container
 from app.core.lifecycle import Lifecycle, LifecycleContext
+from app.infrastructure.system.activation import bring_to_front
 from app.ui import controller as ui_controller
 from app.ui.theme import apply_theme
 
@@ -47,6 +48,15 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+class _AlreadyRunning(SystemExit):
+    """Another instance owns the data dir and was asked to open its window.
+
+    Raised out of the single-instance step so this copy exits as quietly as a
+    successful double-click on the shortcut: exit code 0, no second window, no
+    second writer on the SQLite file.
+    """
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
@@ -64,20 +74,49 @@ def main(argv: list[str] | None = None) -> int:
     from pathlib import Path as _P
 
     guard: object | None = None
+    activator: object | None = None
 
     def _acquire_single_instance(_ctx: LifecycleContext) -> None:
-        nonlocal guard
+        nonlocal activator, guard
+        from app.infrastructure.system.activation import (
+            InstanceActivator,
+            activation_server_name,
+            request_show,
+        )
         from app.infrastructure.system.single_instance import SingleInstanceGuard
 
-        g = SingleInstanceGuard(_P(container.settings.data_dir) / "app.lock")
+        data_dir = container.settings.data_dir
+        g = SingleInstanceGuard(_P(data_dir) / "app.lock")
         if not g.acquire():
+            # Another instance owns the data dir. A second copy must never
+            # exit as a silent no-op (double-clicking the shortcut has to
+            # open the app), so ask the running instance to surface its
+            # window and leave quietly.
+            if request_show(activation_server_name(data_dir)):
+                logger.info("Another instance is already running — asked it to open.")
+                raise _AlreadyRunning(0)
             logger.error("Another instance is already running — exiting.")
             raise SystemExit(1)
         guard = g
         lifecycle.context.set("single_instance_guard", g)
 
+        # The activation channel starts together with the guard: a second
+        # launch must never find the lock held but nobody listening.
+        act = InstanceActivator(activation_server_name(data_dir))
+        act.start()
+        activator = act
+        lifecycle.context.set("instance_activator", act)
+
     def _release_single_instance(_ctx: LifecycleContext) -> None:
-        nonlocal guard
+        nonlocal activator, guard
+        act = lifecycle.context.get("instance_activator")
+        if act is not None:
+            with contextlib.suppress(Exception):
+                act.stop()  # type: ignore[attr-defined]
+        if activator is not None:
+            with contextlib.suppress(Exception):
+                activator.stop()  # type: ignore[attr-defined]
+            activator = None
         g = lifecycle.context.get("single_instance_guard")
         if g is not None:
             try:
@@ -423,6 +462,30 @@ def main(argv: list[str] | None = None) -> int:
 
     ui = ui_controller.UiController(container, app)
 
+    def _surface_window(_request: str = "show") -> None:
+        """A second launch relayed its "show yourself" request to us."""
+        ui.show_main_window()
+
+    # Second-launch activation — a copy that lost the single-instance guard
+    # asks the winner to surface its window. Connections are made once the
+    # UI exists, same as the power wiring below.
+    def _wire_activation_signals() -> None:
+        # Anything the UI presents also gets the OS-level foreground nudge:
+        # Windows refuses foreground changes from a background process, so a
+        # window raised from the tray (or from another process) can otherwise
+        # land behind whatever the user was already looking at.
+        ui.window_presented.connect(bring_to_front)
+        act = lifecycle.context.get("instance_activator")
+        if act is None:
+            return
+        try:
+            act.show_requested.connect(  # type: ignore[attr-defined]
+                _surface_window
+            )
+            logger.info("Activation channel wired to the UI")
+        except Exception:
+            logger.warning("activation→ui wiring failed", exc_info=True)
+
     # Phase 9 wiring helper — connect power manager signals to workers/tray.
     # The manager is installed as a lifecycle step, but connections must be
     # (re)established after workers/tray exist. Use lifecycle context lookup
@@ -497,6 +560,7 @@ def main(argv: list[str] | None = None) -> int:
         ui.start()
         # Wire power → workers/tray now that all lifecycle objects exist
         _wire_power_signals()
+        _wire_activation_signals()
         # Phase 9: autostart entry handled via settings? StartupManager is
         # container-provided for external toggles; no auto-enable here.
         # Minimize-to-tray when launched via registry ( --minimized )
@@ -519,9 +583,11 @@ def main(argv: list[str] | None = None) -> int:
 
     lifecycle.add("ui", start=_start_ui, shutdown=_stop_ui)
 
-    lifecycle.start()
     try:
+        lifecycle.start()
         exit_code = app.exec()
+    except _AlreadyRunning:
+        return 0
     finally:
         lifecycle.shutdown()
     return exit_code

@@ -64,6 +64,23 @@ class FramelessWindow(QWidget):
         """The content region beneath the title bar (fill with a layout)."""
         return self._body
 
+    def present(self) -> None:
+        """Bring the window in front of the user, whatever state it is in.
+
+        The window spends most of its life hidden or minimized in the tray,
+        so "the user asked for the app" must always end with a usable window:
+        un-minimize, show if hidden, then raise and take focus. This is the
+        only supported way for the tray or a second launch to surface a
+        window — it never resizes, so rule #8 (no fullscreen/maximize)
+        cannot be violated from here.
+        """
+        if self.isMinimized():
+            self.showNormal()
+        elif not self.isVisible():
+            self.show()
+        self.raise_()
+        self.activateWindow()
+
     def _on_title_close(self) -> None:
         self.closed_to_tray.emit()
         self.hide()

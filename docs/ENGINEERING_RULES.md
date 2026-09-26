@@ -127,6 +127,25 @@ directly — all UI updates flow through Qt signals. Each worker is wrapped
 in supervisor logic: an uncaught exception is logged and the specific
 worker restarts with backoff, rather than crashing the whole app.
 
+A one-shot worker (`UiController`'s login worker) owns its own lifetime: it
+deletes itself *in its own thread*, then the thread quits and is deleted.
+Never leave a `QObject` whose thread affinity is a finished thread to be
+destroyed from another thread, and never `deleteLater()` a short-lived
+object whose event loop may never run again — the queued delete event
+outlives the object and takes the next event loop down with it.
+
+## Single instance & window activation
+
+Only one process may own the data directory, but a second launch must never
+be a silent no-op: the copy that loses the single-instance guard sends a
+"show yourself" request over a per-data-dir local named pipe to the winner
+and exits with code 0. A refused request is an error worth logging, never a
+crash and never a second window.
+
+Window presentation is owned by the UI (`UiController.show_main_window`);
+OS-level foreground activation is wired in the composition root, because UI
+code never talks to the OS directly.
+
 ## Key engineering decisions (summary)
 
 - Monitoring logic lives in `services/`/`infrastructure/` providers,
@@ -139,6 +158,8 @@ worker restarts with backoff, rather than crashing the whole app.
   goes through interfaces.
 - The Qt UI thread is never blocked by screenshots, DB, or network I/O.
 - Persisted state (not memory) drives crash/restart recovery.
+- A second launch opens the running instance's window; it never opens a
+  second window and never fails silently.
 - UTC for persisted timestamps; monotonic clock for elapsed durations.
 - Auth, sync, screenshot capture, activity detection, and UI are
   separate, independently testable modules.

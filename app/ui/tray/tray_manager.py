@@ -5,6 +5,10 @@ Open Dashboard, current status, session actions (Check In / Take a Break /
 Resume / Check Out), Logout, and Exit. The icon is rendered in grayscale when
 checked out or on break (privacy/status transparency: the employee always
 knows whether monitoring is running, per docs/SECURITY_PRIVACY.md §checklist).
+
+Clicking the icon itself (single *or* double click) opens the app — the icon
+is the primary affordance, and the menu is only for the actions. The context
+menu stays right-click only, so a left click never opens a menu it should not.
 """
 
 from __future__ import annotations
@@ -25,6 +29,11 @@ _logger = get_logger("ui.tray")
 from app.config.constants import APP_NAME
 from app.domain.sessions.state_machine import AppState
 from app.services.session_service import SessionView
+
+# Windows emits Trigger for every click and DoubleClick for the second one, so
+# a double click would open the app twice. This window collapses a burst of
+# click reasons into a single open request.
+_OPEN_COALESCE_MS = 250
 
 
 class TrayState(StrEnum):
@@ -107,6 +116,13 @@ class TrayManager(QObject):
         self._recovery_timer.setInterval(5000)
         self._recovery_timer.timeout.connect(self._ensure_visible)
 
+        # Icon clicks (single or double) ask for the app to be opened. Deferred
+        # by a beat so one physical double click produces one open request.
+        self._open_timer = QTimer(self)
+        self._open_timer.setSingleShot(True)
+        self._open_timer.setInterval(_OPEN_COALESCE_MS)
+        self._open_timer.timeout.connect(self.open_dashboard.emit)
+
         self._title_action = self._menu.addAction(APP_NAME)
         self._title_action.setEnabled(False)
         self._menu.addSeparator()
@@ -138,6 +154,7 @@ class TrayManager(QObject):
         self._exit_action.triggered.connect(self.exit_requested.emit)
 
         self._tray.setContextMenu(self._menu)
+        self._tray.activated.connect(self.handle_activated)
         self.set_view(self._view)
 
     @property
@@ -176,6 +193,9 @@ class TrayManager(QObject):
     def hide(self) -> None:
         self._should_be_visible = False
         self._recovery_timer.stop()
+        # A click that lands just before Exit must not re-open the window
+        # behind the tray we are about to abandon.
+        self._open_timer.stop()
         self._tray.hide()
 
     @Slot()
@@ -185,6 +205,22 @@ class TrayManager(QObject):
             _logger.info("tray recovery: TaskbarCreated — re-showing icon")
             self._available = QSystemTrayIcon.isSystemTrayAvailable()
             self._tray.show()
+
+    @Slot(QSystemTrayIcon.ActivationReason)
+    def handle_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        """Open the app when the icon itself is clicked.
+
+        Single click and double click both mean "show me the app". The open
+        request is coalesced over a short window because Windows reports a
+        double click as ``Trigger`` *and* ``DoubleClick``, which would
+        otherwise surface the window twice. Middle click and context-menu
+        reasons are ignored — the menu handles its own interaction.
+        """
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self._open_timer.start()
 
     @Slot()
     def handle_system_resume(self) -> None:

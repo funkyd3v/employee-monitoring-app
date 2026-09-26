@@ -65,7 +65,16 @@ try:
     hiddenimports += h
 except Exception:
     # Fallback minimal hiddenimports if collect_all unavailable
-    hiddenimports += ["PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets"]
+    hiddenimports += [
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        # QLocalServer/QLocalSocket: the second-launch activation channel
+        # (app/infrastructure/system/activation.py). Without QtNetwork the
+        # agent would still start, but a double-clicked shortcut would do
+        # nothing — so it must never be pruned from the bundle.
+        "PySide6.QtNetwork",
+    ]
 
 # SQLAlchemy — ensure dialects/sqlite are not pruned
 try:
@@ -114,6 +123,10 @@ hiddenimports += [
     "sqlite3",
     "keyring.backends.Windows",
     "keyring.backends.fail",
+    # Second-launch activation channel (QLocalServer/QLocalSocket). Imported
+    # statically, listed explicitly so a future lazy import cannot silently
+    # break "double-click the shortcut to open the running app".
+    "PySide6.QtNetwork",
 ]
 
 # ---------------------------------------------------------------- datas — app assets

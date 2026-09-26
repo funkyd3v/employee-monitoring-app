@@ -43,8 +43,14 @@ employee-monitoring-agent/
 │   │   ├── network/
 │   │   │   ├── api_client.py        # future backend client
 │   │   │   └── sync_adapter.py
-│   │   └── security/
-│   │       └── credential_store.py  # keyring wrapper
+│   │   ├── security/
+│   │   │   └── credential_store.py  # keyring wrapper
+│   │   └── system/                  # Windows / OS integration
+│   │       ├── single_instance.py   # data-dir lock guard
+│   │       ├── activation.py        # second-launch "show yourself" channel
+│   │       ├── power.py             # suspend / lock / TaskbarCreated events
+│   │       ├── startup.py           # autostart registry entry
+│   │       └── crash_handler.py     # DB integrity + global handlers
 │   │
 │   ├── ui/
 │   │   ├── windows/
