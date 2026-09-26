@@ -316,6 +316,58 @@ QPushButton[role="danger"]:disabled {{
     border-color: {p.border};
 }}
 
+QPushButton[role="secondary_solid"] {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {p.secondary_solid}, stop:1 {p.secondary_solid_end});
+    color: {p.on_accent};
+    border-color: {p.secondary_solid_end};
+}}
+
+QPushButton[role="secondary_solid"]:hover {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {p.secondary_solid_hover}, stop:1 {p.secondary_solid});
+    border-color: {p.secondary_solid_hover};
+}}
+
+QPushButton[role="secondary_solid"]:pressed {{
+    background-color: {p.secondary_solid_end};
+    border-color: {p.secondary_solid_end};
+}}
+
+QPushButton[role="secondary_solid"]:focus {{
+    border: {BORDER_WIDTH}px solid {p.focus};
+}}
+
+QPushButton[role="secondary_solid"]:disabled {{
+    color: {p.text_secondary};
+    background-color: {p.surface_hover};
+    border-color: {p.border};
+}}
+
+QPushButton[role="danger_solid"] {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {p.danger_solid}, stop:1 {p.danger_solid_end});
+    color: {p.on_accent};
+    border-color: {p.danger_solid_end};
+}}
+
+QPushButton[role="danger_solid"]:hover {{
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {p.danger_solid_hover}, stop:1 {p.danger_solid});
+    border-color: {p.danger_solid_hover};
+}}
+
+QPushButton[role="danger_solid"]:pressed {{
+    background-color: {p.danger_solid_end};
+    border-color: {p.danger_solid_end};
+}}
+
+QPushButton[role="danger_solid"]:focus {{
+    border: {BORDER_WIDTH}px solid {p.focus};
+}}
+
+QPushButton[role="danger_solid"]:disabled {{
+    color: {p.text_secondary};
+    background-color: {p.surface_hover};
+    border-color: {p.border};
+}}
+
 QPushButton[role="ghost"] {{
     background-color: transparent;
     color: {p.text_secondary};

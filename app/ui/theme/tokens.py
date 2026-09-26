@@ -104,6 +104,12 @@ class Palette:
     on_accent: str = "#FFFFFF"
     focus: str = "#0F766E"
     shadow: str = "rgba(24, 35, 32, 0.18)"
+    secondary_solid: str = "#12766E"
+    secondary_solid_end: str = "#0B5750"
+    secondary_solid_hover: str = "#168C83"
+    danger_solid: str = "#A94430"
+    danger_solid_end: str = "#8A3322"
+    danger_solid_hover: str = "#BC5039"
 
 
 DARK: Palette = Palette(
@@ -130,6 +136,12 @@ DARK: Palette = Palette(
     on_accent="#10221E",
     focus="#56B5A6",
     shadow="rgba(0, 0, 0, 0.34)",
+    secondary_solid="#2A7C73",
+    secondary_solid_end="#1E5F58",
+    secondary_solid_hover="#2F8F85",
+    danger_solid="#A04330",
+    danger_solid_end="#7C2F21",
+    danger_solid_hover="#B24B36",
 )
 
 LIGHT: Palette = Palette(
@@ -156,6 +168,12 @@ LIGHT: Palette = Palette(
     on_accent="#FFFFFF",
     focus="#0F766E",
     shadow="rgba(24, 35, 32, 0.18)",
+    secondary_solid="#12766E",
+    secondary_solid_end="#0B5750",
+    secondary_solid_hover="#168C83",
+    danger_solid="#A94430",
+    danger_solid_end="#8A3322",
+    danger_solid_hover="#BC5039",
 )
 
 ACTIVE_PALETTE: Palette = LIGHT

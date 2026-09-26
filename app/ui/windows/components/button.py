@@ -34,6 +34,8 @@ class ButtonRole(StrEnum):
     SECONDARY = "secondary"
     DANGER = "danger"
     GHOST = "ghost"
+    SECONDARY_SOLID = "secondary_solid"
+    DANGER_SOLID = "danger_solid"
 
 
 class ButtonSize(StrEnum):
@@ -41,6 +43,11 @@ class ButtonSize(StrEnum):
 
     DEFAULT = "default"
     LARGE = "large"
+
+
+_SOLID_ROLES = frozenset(
+    {ButtonRole.PRIMARY, ButtonRole.SECONDARY_SOLID, ButtonRole.DANGER_SOLID}
+)
 
 
 class Button(QPushButton):
@@ -103,7 +110,7 @@ class Button(QPushButton):
         )
 
     def _icon_color(self) -> str:
-        if self._role == ButtonRole.PRIMARY:
+        if self._role in _SOLID_ROLES:
             return self._palette.on_accent
         if self._role == ButtonRole.GHOST:
             return self._palette.text_secondary

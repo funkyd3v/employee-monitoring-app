@@ -100,10 +100,11 @@ Only Logout needs functional behavior in this phase.
         [ Take a Break ]     [ Check Out ]
              ● Active    Last activity: now
 ```
-"Take a Break" is styled as secondary/outline; "Check Out" is styled with
-a subtle danger tint (not alarmingly red — this is a routine action, not
-a destructive one). A slim status pill reflects real-time state: green
-dot "Active" / amber dot "Idle" / gray dot "On Break", with a soft
+"Take a Break" and "Check Out" are both solid gradient-filled CTA buttons
+(`secondary_solid` / `danger_solid` roles) so they read clearly against the
+cream page: deep teal for the break, muted brick for check out — a routine
+action, not an alarming one. A slim status pill reflects real-time state:
+green dot "Active" / amber dot "Idle" / gray dot "On break", with a soft
 (non-distracting) pulse.
 
 **Center — BREAK:**

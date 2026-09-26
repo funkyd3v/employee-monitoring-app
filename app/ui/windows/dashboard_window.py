@@ -247,9 +247,9 @@ class DashboardWindow(FramelessWindow):
         ready.setObjectName("ReadyPage")
 
         # WORKING page
-        self._break_button = Button("Take a Break", role=ButtonRole.SECONDARY)
+        self._break_button = Button("Take a Break", role=ButtonRole.SECONDARY_SOLID)
         self._break_button.clicked.connect(self._on_take_break)
-        self._checkout_button = Button("Check Out", role=ButtonRole.DANGER)
+        self._checkout_button = Button("Check Out", role=ButtonRole.DANGER_SOLID)
         self._checkout_button.clicked.connect(self._on_check_out)
         self._working_timer = TimerWidget()
         self._working_timer.set_font_size(ACTIVE_TIMER_FONT_PX)
