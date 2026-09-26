@@ -512,6 +512,12 @@ class DashboardWindow(FramelessWindow):
 
         menu = QMenu(self)
         menu.setObjectName("ProfileMenu")
+        # A styled QMenu keeps the platform's rectangular popup frame and an
+        # opaque backing store, so the stylesheet radius never clips and a
+        # square box shows behind the rounded trigger. Dropping the native
+        # frame and going translucent lets the QSS border-radius round it.
+        menu.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         user_action = menu.addAction(full)
         user_action.setEnabled(False)
         if email:
