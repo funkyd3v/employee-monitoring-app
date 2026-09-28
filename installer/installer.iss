@@ -78,7 +78,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; PyInstaller --onedir output — everything needed at runtime.
 ; Excludes dev artefacts (.pyc caches are inside base_library.zip — kept).
-Source: "..\dist\EmployeeMonitoring\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; The .env is excluded here and re-added below so it is listed exactly once.
+Source: "..\dist\EmployeeMonitoring\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\_internal\.env"
+; The bundled .env, listed explicitly so a dotfile can never be dropped by the
+; wildcard above: without it the installed app resolves EM_MODE to "local",
+; signs in through the dummy provider, and refuses every real account while
+; reporting it as a wrong password. A missing file fails the installer build
+; on purpose rather than shipping an app that cannot reach a backend.
+Source: "..\dist\EmployeeMonitoring\_internal\.env"; DestDir: "{app}\_internal"; Flags: ignoreversion
 ; Icon for uninstaller display (also inside dist, but keep explicit for setup)
 Source: "..\assets\icons\app.ico"; DestDir: "{app}\assets\icons"; Flags: ignoreversion
 

@@ -43,6 +43,33 @@ Two scripts check the integration against a live server:
 .venv/bin/python scripts/e2e_offline_recovery.py   # kills the server mid-session, proves nothing is lost
 ```
 
+## Configuring the packaged build
+
+**`.env.example` is the single source of truth for a build.** It is tracked in
+git, and `installer/build.spec` bundles it into the executable *as* `.env`. A
+downloaded app therefore needs no configuration step at all — the employee
+installs it and signs in.
+
+To change which server a build talks to, edit `EM_API_BASE_URL` in
+`.env.example`, push, and let CI rebuild. Nothing else changes, and the
+artifact is never a build that half-works.
+
+The bundle needs a `.env` at all because a packaged app with no config
+silently resolves `EM_MODE` to its `local` default, signs in through the dummy
+provider, and refuses every real account while reporting it as a wrong
+password.
+
+Config is resolved lowest-priority first:
+
+1. the `.env` bundled inside the executable
+2. `.env` beside the source tree (development)
+3. `.env` in the working directory
+4. `.env` beside the `.exe` — an IT escape hatch, not a user step
+
+The startup banner in `logs/agent.log` records the mode and the resolved base
+URL, and the login screen names the target, so "which server is this build
+talking to" is always answerable.
+
 ## Getting started (development)
 
 Requirements: Python 3.12+ and `uv` (or `pip`).

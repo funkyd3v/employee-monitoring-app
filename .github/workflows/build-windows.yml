@@ -42,6 +42,38 @@ jobs:
         run: |
           dir dist\EmployeeMonitoring
           if (!(Test-Path "dist\EmployeeMonitoring\EmployeeMonitoring.exe")) { throw "EXE not found" }
+          # A packaged build with no bundled .env silently resolves EM_MODE to
+          # "local", refuses every real account, and reports it as a wrong
+          # password. Fail the build here instead of shipping that.
+          $bundled = "dist\EmployeeMonitoring\_internal\.env"
+          if (!(Test-Path $bundled)) { throw "bundled .env not found - installer/build.spec must ship .env.example as .env" }
+          # Must be the tracked template, byte for byte: proves the right file
+          # was bundled and that nothing in the pipeline rewrote it.
+          $a = (Get-FileHash ".env.example" -Algorithm SHA256).Hash
+          $b = (Get-FileHash $bundled -Algorithm SHA256).Hash
+          if ($a -ne $b) { throw "bundled .env does not match .env.example" }
+          # ...and it must actually select api mode with a server to talk to.
+          $envText = Get-Content $bundled -Raw
+          if ($envText -notmatch "(?m)^EM_MODE=api\s*$") { throw "bundled .env must set EM_MODE=api" }
+          if ($envText -notmatch "(?m)^EM_API_BASE_URL=\S+") { throw "bundled .env must set EM_API_BASE_URL" }
+          # The bundled config ships inside a binary given to every employee.
+          # It must carry no credential — active lines only, so the commented
+          # documentation in the template is not mistaken for one.
+          $active = ($envText -split "`n" | Where-Object { $_ -match '^\s*[A-Za-z_]' }) -join "`n"
+          if ($active -match '(?i)(password|secret|token|api[_-]?key|bearer|credential)') {
+            throw "bundled .env contains a credential-like setting; it would be shipped to every employee"
+          }
+          if ($envText -match '(?i)https?://[^/\s:@]+:[^/\s@]+@') {
+            throw "bundled .env embeds a credential in EM_API_BASE_URL"
+          }
+          # A non-loopback host over http sends the password and the bearer
+          # token in cleartext; the app refuses this at startup, so a build
+          # that still does it is misconfigured.
+          if ($envText -match '(?im)^EM_API_BASE_URL=http://(?!(127\.|localhost|\[?::1\]))') {
+            throw "EM_API_BASE_URL uses http:// for a non-local host; use https://"
+          }
+          # The installer reads this exact path; a layout change must not slip through.
+          if (-not (Select-String -Path "installer\installer.iss" -SimpleMatch "dist\EmployeeMonitoring\_internal\.env" -Quiet)) { throw "installer.iss no longer references the bundled .env path" }
 
       - name: Build installer
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.7

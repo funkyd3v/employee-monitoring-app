@@ -14,11 +14,12 @@ Split into two sources per the backend-readiness strategy
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.constants import (
@@ -31,24 +32,67 @@ from app.config.constants import (
     DEFAULT_SYNC_POLL_SECONDS,
     MIN_SCREENSHOT_INTERVAL_SECONDS,
 )
+from app.core.exceptions import ConfigurationError
 
 RuntimeMode = Literal["local", "api"]
 
 _ENV_PREFIX = "EM_"
 _ENV_FILE = ".env"
 
+# Query-parameter names that would carry a live secret inside the base URL.
+# The URL is bundled into a distributed executable and is visible in DNS and
+# TLS SNI, so anything credential-shaped in it is a credential in plain sight.
+_SECRET_QUERY_HINTS: tuple[str, ...] = (
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "api_key",
+    "apikey",
+    "access_key",
+    "signature",
+    "credential",
+)
+
+
+def _is_loopback(host: str) -> bool:
+    """True for hosts that never leave the machine."""
+    host = host.strip().lower().strip("[]")
+    return host in {"localhost", "::1"} or host.startswith("127.")
+
 
 def _env_file_sources() -> tuple[str, ...]:
-    """Where to look for ``.env``, most general last so it overrides.
+    """Where to look for ``.env``, least specific first so later ones win.
 
     A relative ``env_file`` is resolved against the *current working
     directory*, so a ``.env`` sitting next to the code is invisible the moment
     the app is launched from a shortcut, a scheduled task, or a different
     shell — and api mode then falls back to local with no warning, which looks
-    exactly like a wrong password. Read the file beside the source tree as a
-    base, and the working directory's copy on top of it.
+    exactly like a wrong password.
+
+    A packaged build has no source tree at all, so it gets one more place: a
+    default bundled *inside* the executable (installer/build.spec ships
+    ``.env.example`` as ``.env`` so a downloaded build is never silently
+    local-only), plus a ``.env`` dropped beside the ``.exe`` as the deliberate
+    per-deployment override.
     """
-    return (str(Path(__file__).resolve().parents[2] / _ENV_FILE), _ENV_FILE)
+    sources: list[str] = []
+
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        # The default shipped inside the executable, weakest of all: a
+        # packaged build with no other config must not silently run local.
+        sources.append(str(Path(bundle_dir) / _ENV_FILE))
+
+    sources.append(str(Path(__file__).resolve().parents[2] / _ENV_FILE))
+    sources.append(_ENV_FILE)
+
+    if bundle_dir:
+        # Strongest: a .env deliberately placed beside the .exe is the
+        # per-deployment override, and must win even over a stray source tree.
+        sources.append(str(Path(sys.executable).resolve().parent / _ENV_FILE))
+
+    return tuple(sources)
 
 
 _ENV_FILES: tuple[str, ...] = _env_file_sources()
@@ -119,9 +163,49 @@ class LocalConfig(BaseSettings):
     # never a silent fallback — see load_contract().
     api_contract_file: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_credential_bearing_url(cls, data: object) -> object:
+        """Refuse a base URL carrying a credential — before pydantic can echo it.
+
+        A field validator is the wrong place for this. pydantic appends
+        ``input_value=<the whole url>`` to every field validation error, so a
+        URL like ``https://user:pass@host/api`` would put the password into the
+        exception text, and from there into logs and error dialogs — the one
+        place it must never reach.
+
+        Raising a non-``ValueError`` from a before-validator propagates
+        unwrapped, so the offending value is never quoted back.
+        """
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("api_base_url")
+        if not isinstance(raw, str) or not raw.strip():
+            return data
+        parsed = urlparse(raw.strip())
+        if parsed.username or parsed.password:
+            raise ConfigurationError(
+                "api_base_url must not embed a username or password; the agent "
+                "signs in with the employee's own credentials"
+            )
+        for name, _value in parse_qsl(parsed.query, keep_blank_values=True):
+            if any(hint in name.lower() for hint in _SECRET_QUERY_HINTS):
+                raise ConfigurationError(
+                    "api_base_url must not carry a credential-like query "
+                    "parameter; the agent authenticates with the employee's own "
+                    "credentials"
+                )
+        return data
+
     @field_validator("api_base_url")
     @classmethod
     def _validate_api_base_url(cls, value: str) -> str:
+        """Reject base URLs that would send the session token in cleartext.
+
+        Credential-bearing URLs never reach here — they are rejected by
+        :meth:`_reject_credential_bearing_url` first, so echoing the input
+        value in the error below is safe.
+        """
         value = value.strip().rstrip("/")
         if not value:
             return value
@@ -130,6 +214,12 @@ class LocalConfig(BaseSettings):
             raise ValueError("api_base_url must start with http:// or https://")
         if not parsed.netloc:
             raise ValueError("api_base_url must include a host")
+
+        if parsed.scheme == "http" and not _is_loopback(parsed.hostname or ""):
+            raise ValueError(
+                "api_base_url must use https:// for a non-local host; over "
+                "http the password and session token are sent in cleartext"
+            )
         return value
 
     @field_validator("api_connect_timeout_seconds", "api_timeout_seconds")

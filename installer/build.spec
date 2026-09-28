@@ -42,6 +42,7 @@ PROJECT_ROOT = SPEC_DIR.parent
 ICON = PROJECT_ROOT / "assets" / "icons" / "app.ico"
 ASSETS_SRC = PROJECT_ROOT / "assets"
 UI_ASSETS_SRC = PROJECT_ROOT / "app" / "ui" / "assets"
+ENV_TEMPLATE = PROJECT_ROOT / ".env.example"
 
 block_cipher = None
 
@@ -165,6 +166,18 @@ a = Analysis(  # type: ignore[name-defined]  # noqa: F821 — provided by PyInst
 
 # Remove duplicate datas that collect_all may have over-added (keep bundle lean)
 # PyInstaller will dedup internally; explicit filtering not needed.
+
+# Ship a .env inside the bundle. Without one, a packaged build starts with no
+# config at all, resolves EM_MODE to its "local" default, signs in through the
+# dummy provider, and refuses every real account — which reads to the user as
+# a wrong password. Bundling the tracked template makes a downloaded build work
+# out of the box; app/config/settings.py reads it from sys._MEIPASS, and a .env
+# placed beside the .exe overrides it for a real deployment.
+#
+# Appended to the TOC directly, not via `datas=`: that only ever preserves the
+# source basename, which would ship the file as ".env.example" — never read.
+if ENV_TEMPLATE.exists():
+    a.datas.append((".env", str(ENV_TEMPLATE), "DATA"))
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)  # type: ignore[name-defined]  # noqa: F821
 
