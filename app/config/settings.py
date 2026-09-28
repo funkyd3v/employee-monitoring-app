@@ -38,6 +38,22 @@ _ENV_PREFIX = "EM_"
 _ENV_FILE = ".env"
 
 
+def _env_file_sources() -> tuple[str, ...]:
+    """Where to look for ``.env``, most general last so it overrides.
+
+    A relative ``env_file`` is resolved against the *current working
+    directory*, so a ``.env`` sitting next to the code is invisible the moment
+    the app is launched from a shortcut, a scheduled task, or a different
+    shell — and api mode then falls back to local with no warning, which looks
+    exactly like a wrong password. Read the file beside the source tree as a
+    base, and the working directory's copy on top of it.
+    """
+    return (str(Path(__file__).resolve().parents[2] / _ENV_FILE), _ENV_FILE)
+
+
+_ENV_FILES: tuple[str, ...] = _env_file_sources()
+
+
 def default_data_dir() -> Path:
     """Per-user data directory, never the install directory.
 
@@ -58,7 +74,7 @@ class LocalConfig(BaseSettings):
     """Machine-local settings, read from the environment / ``.env``."""
 
     model_config = SettingsConfigDict(
-        env_file=_ENV_FILE,
+        env_file=_ENV_FILES,
         env_prefix=_ENV_PREFIX,
         env_file_encoding="utf-8",
         extra="ignore",
