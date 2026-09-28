@@ -76,6 +76,20 @@ The reference server serves this same contract as a browsable reference at
 password", so the endpoint cannot enumerate accounts. Rate limited to 5
 attempts per minute per (email, IP).
 
+How the client reads a login failure decides what the employee is told, so
+the mapping is explicit rather than incidental:
+
+| Response | Reported to the employee as |
+|---|---|
+| `401` / `403` / `422` | "Check your email and password" |
+| `404` / `405` | "Could not reach the monitoring server" — the route is absent, which means the base URL is wrong, not the password |
+| `429` / `5xx` / connect or timeout | "Could not reach the monitoring server" |
+| `2xx` with a non-JSON body, or no `token`, or no `user` | "Could not reach the monitoring server" |
+
+Only the first row is ever about the password. Everything else is a
+deployment or connectivity problem, and telling the employee to retype a
+correct password sends them to fix the one thing that is already right.
+
 The client stores the token in the OS keyring and keeps it for the life of
 the login. Re-logging in on the same device revokes the previous token.
 

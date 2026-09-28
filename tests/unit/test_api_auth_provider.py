@@ -119,6 +119,19 @@ class TestLogin:
         with pytest.raises(AuthenticationError):
             provider.login(EMAIL, PASSWORD)
 
+    @pytest.mark.parametrize("status", [404, 405])
+    def test_missing_login_route_is_not_blamed_on_the_password(
+        self, status: int
+    ) -> None:
+        """A wrong base URL (missing version prefix, web UI, wrong port) must
+        not read as a typo in the employee's password."""
+        provider = make_provider(
+            json_handler([httpx.Response(status, json={"message": "not found"})])
+        )
+
+        with pytest.raises(MonitoringServerUnavailableError, match="base URL"):
+            provider.login(EMAIL, PASSWORD)
+
     def test_unreachable_backend_raises_authentication_error(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("refused", request=request)
@@ -129,14 +142,37 @@ class TestLogin:
     def test_malformed_success_body_raises(self) -> None:
         provider = make_provider(json_handler([httpx.Response(200, json={"ok": True})]))
 
-        with pytest.raises(AuthenticationError, match="unexpected login response"):
+        with pytest.raises(MonitoringServerUnavailableError, match="no session token"):
             provider.login(EMAIL, PASSWORD)
 
     def test_token_missing_from_body_raises(self) -> None:
         body = {k: v for k, v in LOGIN_BODY.items() if k != "token"}
         provider = make_provider(json_handler([httpx.Response(200, json=body)]))
 
-        with pytest.raises(AuthenticationError, match="unexpected login response"):
+        with pytest.raises(MonitoringServerUnavailableError, match="no session token"):
+            provider.login(EMAIL, PASSWORD)
+
+    def test_unparsable_body_raises(self) -> None:
+        """A 2xx that is not JSON (proxy, captive portal, wrong base URL) is a
+        server problem the employee can be told about, not a silent hang."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, text="<html>proxy</html>")
+
+        provider = make_provider(handler)
+
+        with pytest.raises(
+            MonitoringServerUnavailableError, match="unreadable response"
+        ):
+            provider.login(EMAIL, PASSWORD)
+
+    def test_missing_user_envelope_raises(self) -> None:
+        body = {k: v for k, v in LOGIN_BODY.items() if k != "user"}
+        provider = make_provider(json_handler([httpx.Response(200, json=body)]))
+
+        with pytest.raises(
+            MonitoringServerUnavailableError, match="unrecognised account record"
+        ):
             provider.login(EMAIL, PASSWORD)
 
     def test_never_logs_the_password(self, caplog) -> None:

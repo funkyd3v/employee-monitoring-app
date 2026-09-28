@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, InvalidCredentialsError
 from app.domain.auth.auth import (
     AuthSession,
     DummyAuthConfig,
@@ -57,6 +57,29 @@ def test_login_rejects_empty_password() -> None:
 def test_login_rejects_empty_email() -> None:
     with pytest.raises(AuthenticationError, match="invalid credentials"):
         make_provider().login("", PASSWORD)
+
+
+def test_refused_credentials_are_actionable_not_generic() -> None:
+    """A rejected pair must be classified, not left as the bare parent.
+
+    The UI renders the bare parent as a contentless "please try again", so
+    leaving it here is what makes a local-mode build (which refuses every real
+    account) indistinguishable from a genuine wrong password.
+    """
+    with pytest.raises(InvalidCredentialsError):
+        make_provider().login("someone-else@example.com", PASSWORD)
+
+    with pytest.raises(InvalidCredentialsError):
+        make_provider().login(EMAIL, "not-the-password")
+
+
+def test_malformed_token_is_not_blamed_on_the_password() -> None:
+    """A structurally broken token is a different problem from a bad pair, and
+    must not inherit the "check your credentials" wording."""
+    with pytest.raises(AuthenticationError) as caught:
+        make_provider().refresh("not-a-token")
+
+    assert not isinstance(caught.value, InvalidCredentialsError)
 
 
 def test_unset_config_password_accepts_any_nonempty_for_dev() -> None:

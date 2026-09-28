@@ -118,24 +118,57 @@ class ApiAuthProvider(AuthProvider):
 
         try:
             response = self._client.request(endpoint.method, endpoint.path, json=body)
-        except (ApiAuthError, ApiRejectedError) as exc:
-            # Wrong credentials arrive as 422 (ApiRejectedError); 401
-            # (ApiAuthError) means the token store has gone stale. Both are the
-            # same thing to the employee, and neither is worth retrying.
+        except ApiRejectedError as exc:
+            if exc.status_code in (404, 405):
+                # The endpoint is not there, which means the base URL is
+                # pointing at something that is not this API — a missing
+                # version prefix, a web UI, the wrong port. Retrying the same
+                # password will never work, so calling it a bad password sends
+                # the employee to fix the one thing that is already correct.
+                raise MonitoringServerUnavailableError(
+                    "monitoring server does not expose "
+                    f"{endpoint.method} {endpoint.path} — check the API base URL"
+                ) from exc
+            # 422 is Laravel's validation refusal: the pair was wrong.
+            raise InvalidCredentialsError("invalid email or password") from exc
+        except ApiAuthError as exc:
+            # 401/403 on an unauthenticated login means the token store has
+            # gone stale, not that the employee mistyped anything.
             raise InvalidCredentialsError("invalid email or password") from exc
         except ApiError as exc:
             raise MonitoringServerUnavailableError(
                 "could not reach the monitoring server"
             ) from exc
 
-        payload = self._client.json(response, context="login")
+        # Decoding belongs inside the same guard: a base URL that resolves to a
+        # proxy, a captive portal, or an HTML error page still returns 2xx, and
+        # an unparsed body is a server problem the employee should be told
+        # about — not a generic "something went wrong".
+        try:
+            payload = self._client.json(response, context="login")
+        except ApiError as exc:
+            raise MonitoringServerUnavailableError(
+                "monitoring server returned an unreadable response"
+            ) from exc
+
         token = payload.get("token")
         if not isinstance(token, str) or not token:
-            raise AuthenticationError("backend returned an unexpected login response")
+            raise MonitoringServerUnavailableError(
+                "monitoring server returned no session token"
+            )
 
         self._token_holder.set(token)
         _logger.info("authenticated against the monitoring backend (email=%s)", email)
-        return AuthSession(user=_parse_user(payload, self._contract), token=token)
+        # A token with no matching user envelope means the login succeeded but
+        # the server speaks a different shape than the contract declares. That
+        # is a deployment problem, and saying so beats a bare "try again".
+        try:
+            user = _parse_user(payload, self._contract)
+        except AuthenticationError as exc:
+            raise MonitoringServerUnavailableError(
+                "monitoring server returned an unrecognised account record"
+            ) from exc
+        return AuthSession(user=user, token=token)
 
     def refresh(self, token: str) -> AuthSession:
         """Validate a persisted token at startup and extend its lifetime.

@@ -24,7 +24,7 @@ import secrets
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import AuthenticationError, InvalidCredentialsError
 
 _DUMMY_TOKEN_PREFIX = "dv1."  # noqa: S105 -- token format prefix, not a credential
 
@@ -68,7 +68,14 @@ class AuthProvider(ABC):
 
     @abstractmethod
     def login(self, email: str, password: str) -> AuthSession:
-        """Authenticate and return a session; raises AuthenticationError."""
+        """Authenticate and return a session.
+
+        Raises :class:`InvalidCredentialsError` when the *pair* is refused and
+        :class:`MonitoringServerUnavailableError` when the backend could not be
+        reached or answered unusably. Callers and the UI rely on that split;
+        collapsing both into the bare parent is what makes a misconfigured
+        deployment look like a typo in the employee's password.
+        """
 
     @abstractmethod
     def refresh(self, token: str) -> AuthSession:
@@ -134,15 +141,20 @@ class LocalDummyAuthProvider(AuthProvider):
         self._config = config or DummyAuthConfig()
 
     def login(self, email: str, password: str) -> AuthSession:
+        # Refused credentials are raised as InvalidCredentialsError, not the
+        # bare parent: the UI maps the two differently on purpose, and a
+        # generic "please try again" is exactly how a local-mode build
+        # masquerades as a real backend ("your password is wrong") when the
+        # truth is that the app is not talking to a server at all.
         if not email or not password:
-            raise AuthenticationError("invalid credentials")
+            raise InvalidCredentialsError("invalid credentials")
         if email != self._config.email:
-            raise AuthenticationError("invalid credentials")
+            raise InvalidCredentialsError("invalid credentials")
         configured_password = self._config.password
         if configured_password and not secrets.compare_digest(
             password, configured_password
         ):
-            raise AuthenticationError("invalid credentials")
+            raise InvalidCredentialsError("invalid credentials")
         user = AuthenticatedUser(
             external_user_id=f"local:{email}",
             email=email,
