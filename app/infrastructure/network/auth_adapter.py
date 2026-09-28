@@ -24,7 +24,11 @@ import socket
 from typing import TYPE_CHECKING, Any
 
 from app.config.constants import APP_VERSION
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import (
+    AuthenticationError,
+    InvalidCredentialsError,
+    MonitoringServerUnavailableError,
+)
 from app.core.logging import get_logger
 from app.domain.auth.auth import AuthenticatedUser, AuthProvider, AuthSession
 from app.domain.auth.workspace import WorkspaceProvider
@@ -33,6 +37,7 @@ from app.infrastructure.network.http_client import (
     ApiAuthError,
     ApiError,
     ApiHttpClient,
+    ApiRejectedError,
 )
 
 if TYPE_CHECKING:
@@ -113,14 +118,14 @@ class ApiAuthProvider(AuthProvider):
 
         try:
             response = self._client.request(endpoint.method, endpoint.path, json=body)
-        except ApiAuthError as exc:
-            # Wrong credentials arrive as 422; 401 means the token store has
-            # gone stale. Both are the same thing to the employee.
-            raise AuthenticationError("invalid email or password") from exc
+        except (ApiAuthError, ApiRejectedError) as exc:
+            # Wrong credentials arrive as 422 (ApiRejectedError); 401
+            # (ApiAuthError) means the token store has gone stale. Both are the
+            # same thing to the employee, and neither is worth retrying.
+            raise InvalidCredentialsError("invalid email or password") from exc
         except ApiError as exc:
-            raise AuthenticationError(
-                "could not reach the monitoring server; check your connection "
-                "and try again"
+            raise MonitoringServerUnavailableError(
+                "could not reach the monitoring server"
             ) from exc
 
         payload = self._client.json(response, context="login")
@@ -144,10 +149,10 @@ class ApiAuthProvider(AuthProvider):
         try:
             response = self._client.request(endpoint.method, endpoint.path, token=token)
         except ApiAuthError as exc:
-            raise AuthenticationError("stored session is no longer valid") from exc
+            raise InvalidCredentialsError("stored session is no longer valid") from exc
         except ApiError as exc:
-            raise AuthenticationError(
-                "could not reach the monitoring server; sign in again when it is reachable"
+            raise MonitoringServerUnavailableError(
+                "could not reach the monitoring server"
             ) from exc
 
         payload = self._client.json(response, context="refresh")

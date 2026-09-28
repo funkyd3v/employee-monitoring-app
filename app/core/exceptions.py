@@ -26,6 +26,23 @@ class AuthenticationError(AppError):
     """Raised when authentication or session restoration fails."""
 
 
+class InvalidCredentialsError(AuthenticationError):
+    """The email/password pair was refused, or a stored token is no longer valid.
+
+    Split out from its parent because the employee can act on it — retype the
+    password — and because the UI must not tell someone to check their password
+    when the actual problem was that the server could not be reached.
+    """
+
+
+class MonitoringServerUnavailableError(AuthenticationError):
+    """The monitoring backend could not be reached, or answered unusably.
+
+    Also actionable, differently: this is a connection or server problem, so
+    retrying with the same credentials will fail the same way.
+    """
+
+
 class SessionStateError(AppError):
     """Raised on invalid state-machine transitions (declared in
     docs/STATE_MACHINE.md — the machine itself rejects invalid transitions,

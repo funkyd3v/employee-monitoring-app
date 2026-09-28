@@ -12,7 +12,11 @@ from typing import Any
 
 import httpx
 import pytest
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import (
+    AuthenticationError,
+    InvalidCredentialsError,
+    MonitoringServerUnavailableError,
+)
 from app.domain.auth.token_holder import AuthTokenHolder
 from app.infrastructure.network.auth_adapter import ApiAuthProvider
 from app.infrastructure.network.http_client import ApiHttpClient
@@ -210,3 +214,44 @@ class TestLogout:
         make_provider(handler, holder).logout(TOKEN)  # must not raise
 
         assert holder.get() is None
+
+
+class TestLoginFailureClassification:
+    """Which failure the employee is told about.
+
+    Regression: a 422 is classified as *rejected*, not *auth*, so an
+    ``except ApiAuthError`` clause alone reported "invalid email or password"
+    for the one case that is genuinely a bad password and "could not reach the
+    server" for the other — the two were swapped.
+    """
+
+    def _login_against(self, handler: Any) -> None:
+        make_provider(handler).login(EMAIL, "whatever")
+
+    def test_bad_credentials_are_reported_as_bad_credentials(self) -> None:
+        with pytest.raises(InvalidCredentialsError):
+            self._login_against(json_handler([httpx.Response(422, json={"m": "no"})]))
+
+    def test_a_stale_token_is_reported_as_bad_credentials(self) -> None:
+        with pytest.raises(InvalidCredentialsError):
+            self._login_against(json_handler([httpx.Response(401, json={"m": "gone"})]))
+
+    @pytest.mark.parametrize("status", [500, 503, 429])
+    def test_a_server_problem_is_reported_as_unreachable(self, status: int) -> None:
+        with pytest.raises(MonitoringServerUnavailableError):
+            self._login_against(json_handler([httpx.Response(status, json={"m": "x"})]))
+
+    def test_a_connection_failure_is_reported_as_unreachable(self) -> None:
+        def refuse(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        with pytest.raises(MonitoringServerUnavailableError):
+            self._login_against(refuse)
+
+    def test_every_classification_is_an_authentication_error(self) -> None:
+        """The UI's existing handling must keep working for both."""
+        for error in (
+            InvalidCredentialsError("x"),
+            MonitoringServerUnavailableError("y"),
+        ):
+            assert isinstance(error, AuthenticationError)

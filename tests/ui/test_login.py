@@ -92,3 +92,49 @@ def test_clear_error_hides_submit_error(qtbot: QtBot) -> None:
 
     window.clear_error()
     assert not window._submit_error.isVisible()
+
+
+class TestFriendlyAuthMessage:
+    """The message must name the actual cause.
+
+    One message for every failure is how a misconfigured ``api_base_url`` looks
+    like a typo in the employee's password: the app says "check your email and
+    password" while the real answer is "the app is not talking to a server".
+    """
+
+    def test_wrong_credentials_blame_the_credentials(self) -> None:
+        from app.core.exceptions import InvalidCredentialsError
+        from app.ui.controller import _friendly_auth_message
+
+        message = _friendly_auth_message(
+            InvalidCredentialsError("invalid email or password")
+        )
+
+        assert message == (
+            "We couldn't sign you in. Check your email and password and try again."
+        )
+
+    def test_an_unreachable_server_says_so(self) -> None:
+        from app.core.exceptions import MonitoringServerUnavailableError
+        from app.ui.controller import _friendly_auth_message
+
+        message = _friendly_auth_message(MonitoringServerUnavailableError("boom"))
+
+        assert "couldn't reach the monitoring server" in message
+        assert "password" not in message
+
+    def test_an_untyped_auth_failure_blames_neither(self) -> None:
+        from app.core.exceptions import AuthenticationError
+        from app.ui.controller import _friendly_auth_message
+
+        message = _friendly_auth_message(AuthenticationError("internal detail"))
+
+        assert message == "We couldn't sign you in. Please try again."
+        assert "internal detail" not in message
+
+    def test_a_non_auth_failure_stays_generic(self) -> None:
+        from app.ui.controller import _friendly_auth_message
+
+        assert _friendly_auth_message(ValueError("trace me")) == (
+            "Something went wrong while signing in. Please try again."
+        )

@@ -17,7 +17,11 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
-from app.core.exceptions import AuthenticationError
+from app.core.exceptions import (
+    AuthenticationError,
+    InvalidCredentialsError,
+    MonitoringServerUnavailableError,
+)
 from app.core.logging import get_logger
 from app.domain.auth.auth import AuthenticatedUser
 from app.domain.sessions.state_machine import AppState
@@ -348,9 +352,22 @@ class UiController(QObject):
 
 
 def _friendly_auth_message(exc: object) -> str:
-    """Friendly prose; never raw exception text (UI_SPEC error rules)."""
-    if isinstance(exc, AuthenticationError):
+    """Friendly prose; never raw exception text (UI_SPEC error rules).
+
+    Split by cause because a single message for every failure is actively
+    misleading: telling someone to check their password when the server is
+    unreachable sends them looking in the wrong place, and it is exactly how a
+    misconfigured `api_base_url` presents itself.
+    """
+    if isinstance(exc, InvalidCredentialsError):
         return "We couldn't sign you in. Check your email and password and try again."
+    if isinstance(exc, MonitoringServerUnavailableError):
+        return (
+            "We couldn't reach the monitoring server. Check your connection "
+            "and try again."
+        )
+    if isinstance(exc, AuthenticationError):
+        return "We couldn't sign you in. Please try again."
     return "Something went wrong while signing in. Please try again."
 
 
