@@ -87,7 +87,7 @@ class User(Base):
     external_user_id: Mapped[str | None] = mapped_column(String(128))
     email: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[str | None] = mapped_column(String(255))
-    team_name: Mapped[str | None] = mapped_column(String(255))
+    workspace_name: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime, default=utc_now, onupdate=utc_now

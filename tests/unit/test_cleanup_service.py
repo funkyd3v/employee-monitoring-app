@@ -69,7 +69,7 @@ def test_cleanup_respects_retention(tmp_path: Path) -> None:
                 external_user_id="ext-1",
                 email="a@example.com",
                 display_name="A",
-                team_name="T",
+                workspace_name="T",
             )
             s.flush()
             sess_repo = SessionRepository(s)
@@ -117,7 +117,7 @@ def test_cleanup_preserves_unsynced_screenshots(tmp_path: Path) -> None:
                 external_user_id="ext-1",
                 email="a@example.com",
                 display_name="A",
-                team_name="T",
+                workspace_name="T",
             )
             s.flush()
             sess_repo = SessionRepository(s)
@@ -158,7 +158,7 @@ def test_cleanup_immediate_retention_zero(tmp_path: Path) -> None:
                 external_user_id="ext-1",
                 email="a@example.com",
                 display_name="A",
-                team_name="T",
+                workspace_name="T",
             )
             s.flush()
             sess_repo = SessionRepository(s)

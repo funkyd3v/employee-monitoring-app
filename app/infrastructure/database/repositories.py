@@ -52,7 +52,7 @@ class UserRepository:
         external_user_id: str | None,
         email: str,
         display_name: str | None,
-        team_name: str | None,
+        workspace_name: str | None,
     ) -> User:
         """Insert the user or update the existing row (matched by email)."""
         row = self._session.scalar(select(User).where(User.email == email))
@@ -61,13 +61,13 @@ class UserRepository:
                 external_user_id=external_user_id,
                 email=email,
                 display_name=display_name,
-                team_name=team_name,
+                workspace_name=workspace_name,
             )
             self._session.add(row)
         else:
             row.external_user_id = external_user_id
             row.display_name = display_name
-            row.team_name = team_name
+            row.workspace_name = workspace_name
         self._session.flush()
         return row
 

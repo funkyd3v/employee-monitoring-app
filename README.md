@@ -2,15 +2,46 @@
 
 A Windows desktop agent, built in Python, that records an employee's
 work-session activity: check-in/out, breaks, idle vs. active periods, and
-admin-configured screenshots. **Client-side agent only** for this phase —
-no backend, no cloud sync, no admin dashboard.
+admin-configured screenshots. It is **local-first**: everything is recorded
+and queued on the machine whether or not a backend is reachable.
 
 > For an agent (AI or human) working in this repository, start at
 > `AGENTS.md`; the docs in `docs/` are the source of truth.
 
 ## Status
 
-Phases 1–10 complete (Phase 10: packaging & QA). See `docs/TESTING_AND_DOD.md` § Indicative timeline for the full plan.
+Phases 1–10 complete (Phase 10: packaging & QA). See `docs/TESTING_AND_DOD.md` § Indicative timeline for the full plan. A sample backend and `mode: "api"` sync were added afterwards.
+
+## Running against a backend
+
+`mode: "local"` is the default and never touches the network. To sync to a
+server, set in `.env`:
+
+```
+EM_MODE=api
+EM_API_BASE_URL=http://127.0.0.1:8000/api/v1
+```
+
+The wire format is `docs/API_CONTRACT.md`. A reference implementation lives
+in `~/projects/empolee-monitoring-backend` (Laravel + Sanctum, with a small
+single-employee dashboard and a generated `/api-docs` reference).
+
+In api mode the app also shows the **workspace name** the backend reports for
+the signed-in employee, refreshed on each sync tick — so renaming the
+workspace from the dashboard relabels the running app. The employee sets it
+there; the agent only reads it.
+
+`mode: "api"` requires real employee credentials and refuses the plaintext
+`dev-file` credential store — tokens belong in the OS keyring. A missing or
+malformed `EM_API_BASE_URL` fails at startup rather than silently falling back
+to local-only recording.
+
+Two scripts check the integration against a live server:
+
+```bash
+.venv/bin/python scripts/e2e_api_mode.py           # login → check in → screenshot → sync
+.venv/bin/python scripts/e2e_offline_recovery.py   # kills the server mid-session, proves nothing is lost
+```
 
 ## Getting started (development)
 
@@ -66,8 +97,13 @@ See `docs/ARCHITECTURE.md`. Key invariants (non-negotiable):
 - The UI timer is never the source of truth; elapsed time is always
   recomputed from persisted timestamps + accumulated breaks.
 - Local data is deleted only after a server confirms persistence.
-- Everything that will talk to a future backend sits behind an interface
-  (`AuthProvider`, `SyncProvider`, `ConfigProvider`).
+- Everything that will talk to a backend sits behind an interface
+  (`AuthProvider`, `SyncProvider`, `WorkspaceProvider`, `ConfigProvider`);
+  `mode: "api"` swaps the implementations without touching a single service.
+- The wire surface is **data**, not code: `infrastructure/network/contract.py`
+  declares every endpoint, and the providers are generic drivers over it. A new
+  endpoint — or a differently-shaped backend, via `EM_API_CONTRACT_PATH` — needs
+  no change to the providers, the services or the UI.
 - The Qt UI thread is never blocked; workers update via Qt signals only.
 
 ## Security & privacy

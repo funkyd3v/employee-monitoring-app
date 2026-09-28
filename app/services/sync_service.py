@@ -518,7 +518,7 @@ class SyncService:
                         external_user_id=u.external_user_id,
                         email=u.email,
                         display_name=u.display_name,
-                        team_name=u.team_name,
+                        workspace_name=u.workspace_name,
                     )
             elif item.entity_type == "screenshot":
                 sm = db.get(ScreenshotMetadata, item.entity_id)

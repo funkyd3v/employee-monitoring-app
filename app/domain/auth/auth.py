@@ -36,7 +36,7 @@ class AuthenticatedUser:
     external_user_id: str
     email: str
     display_name: str | None = None
-    team_name: str | None = None
+    workspace_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ class DummyAuthConfig:
     email: str = "employee@example.com"
     password: str = ""
     display_name: str | None = None
-    team_name: str | None = None
+    workspace_name: str | None = None
 
 
 class AuthProvider(ABC):
@@ -90,7 +90,7 @@ def _encode_user(user: AuthenticatedUser) -> str:
             "external_user_id": user.external_user_id,
             "email": user.email,
             "display_name": user.display_name,
-            "team_name": user.team_name,
+            "workspace_name": user.workspace_name,
         },
         separators=(",", ":"),
     ).encode("utf-8")
@@ -117,7 +117,7 @@ def _decode_user(token: str) -> AuthenticatedUser:
         external_user_id=external_user_id,
         email=email,
         display_name=payload.get("display_name"),
-        team_name=payload.get("team_name"),
+        workspace_name=payload.get("workspace_name"),
     )
 
 
@@ -147,7 +147,7 @@ class LocalDummyAuthProvider(AuthProvider):
             external_user_id=f"local:{email}",
             email=email,
             display_name=self._config.display_name,
-            team_name=self._config.team_name,
+            workspace_name=self._config.workspace_name,
         )
         token = _encode_user(user)
         return AuthSession(user=user, token=token)

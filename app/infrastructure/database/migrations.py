@@ -9,6 +9,12 @@ Policy:
 * Migration ``1`` creates the baseline schema from ``models.Base.metadata``.
 * Future changes append a new numbered migration (raw SQL DDL) so existing
   installs upgrade in place. Bump :data:`SCHEMA_VERSION` to the newest one.
+* A migration must be safe on a database that was created *after* it was
+  written: the baseline is generated from the current models, so a fresh
+  install already has every column a later migration would add. Migrations
+  therefore check for the column they are about to change and no-op when it is
+  already in the desired state, instead of failing the startup of a new
+  install.
 
 Safe to call on every startup; no-op when already current.
 """
@@ -27,7 +33,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.engine import Connection
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _LOGGER = get_logger("migrations")
 
@@ -39,7 +45,33 @@ def _migrate_to_1(conn: Connection) -> None:
     Base.metadata.create_all(bind=conn)
 
 
-_MIGRATIONS: dict[int, Callable[[Connection], None]] = {1: _migrate_to_1}
+def _migrate_to_2(conn: Connection) -> None:
+    """``users.team_name`` → ``users.workspace_name``.
+
+    The product calls it a workspace, and the backend's field was renamed to
+    match. A cached identity row is cheap to rebuild, but the rename keeps
+    installs that were upgraded from an older build from silently losing the
+    name they had.
+    """
+    columns = {
+        str(row[1]) for row in conn.execute(text("PRAGMA table_info(users)")).all()
+    }
+
+    if "team_name" not in columns:
+        return  # fresh install: the baseline already created the new name
+
+    if "workspace_name" in columns:
+        conn.execute(text("ALTER TABLE users DROP COLUMN team_name"))
+    else:
+        conn.execute(
+            text("ALTER TABLE users RENAME COLUMN team_name TO workspace_name")
+        )
+
+
+_MIGRATIONS: dict[int, Callable[[Connection], None]] = {
+    1: _migrate_to_1,
+    2: _migrate_to_2,
+}
 
 
 def migrate(engine: Engine) -> int:

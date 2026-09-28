@@ -62,6 +62,7 @@ change conflicts with one of these, stop and flag it rather than proceeding.
 | `docs/STATE_MACHINE.md` | Application session state machine and transition rules |
 | `docs/ENGINEERING_RULES.md` | The detailed, non-negotiable engineering rules (§8 of the plan) |
 | `docs/DATA_MODEL.md` | SQLite schema, storage layout, file naming |
+| `docs/API_CONTRACT.md` | The backend wire format both sides implement |
 | `docs/UI_SPEC.md` | Window behavior, screens, design tokens, tray |
 | `docs/SECURITY_PRIVACY.md` | Privacy boundary, credential handling, security checklist |
 | `docs/TESTING_AND_DOD.md` | Test strategy, acceptance criteria, known risks |

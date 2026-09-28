@@ -65,7 +65,7 @@ def make_service_with_user(
             external_user_id="ext-test",
             email="employee@example.com",
             display_name="Test User",
-            team_name="Engineering",
+            workspace_name="Engineering",
         )
         s.commit()
         uid = user.id

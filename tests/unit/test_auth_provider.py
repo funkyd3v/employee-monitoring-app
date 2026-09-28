@@ -24,7 +24,7 @@ def make_provider(
             email=email,
             password=password,
             display_name=DISPLAY_NAME,
-            team_name=TEAM,
+            workspace_name=TEAM,
         )
     )
 
@@ -34,7 +34,7 @@ def test_login_success_returns_user_and_session() -> None:
     assert isinstance(session, AuthSession)
     assert session.user.email == EMAIL
     assert session.user.display_name == DISPLAY_NAME
-    assert session.user.team_name == TEAM
+    assert session.user.workspace_name == TEAM
     assert session.user.external_user_id == f"local:{EMAIL}"
     assert session.token.startswith("dv1.")
 

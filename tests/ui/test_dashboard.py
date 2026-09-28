@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 ALICE = DashboardUser(
     display_name="Ada Lovelace",
     email="ada@company.com",
-    team_name="Analytics",
+    workspace_name="Analytics",
 )
 
 
@@ -172,10 +172,39 @@ def test_completed_page_shows_summary_chips(
 
 def test_set_user_updates_header_fields(qtbot: QtBot, presenter: StubPresenter) -> None:
     window = make_window(qtbot, presenter)
-    assert window._team_label.text() == "Analytics"
+    assert window._workspace_label.text() == "Analytics"
     assert window._profile_trigger.text() == "Ada  ▾"
     assert window._profile_trigger.toolTip() == "Account menu — Ada Lovelace"
     assert window._greeting.text().endswith("Ada")
+
+
+def test_a_renamed_workspace_updates_only_the_label(
+    qtbot: QtBot, presenter: StubPresenter
+) -> None:
+    """The employee renames their workspace from the dashboard; the running app
+    picks it up on the next sync cycle without a restart."""
+    window = make_window(qtbot, presenter)
+    greeting = window._greeting.text()
+    avatar = window._profile_trigger.text()
+
+    window.set_workspace_name("Field Ops")
+
+    assert window._workspace_label.text() == "Field Ops"
+    assert window._workspace_label.toolTip() == "Field Ops"
+    # A one-word change must not rebuild the rest of the header.
+    assert window._greeting.text() == greeting
+    assert window._profile_trigger.text() == avatar
+
+
+def test_clearing_the_workspace_falls_back_to_a_generic_label(
+    qtbot: QtBot, presenter: StubPresenter
+) -> None:
+    window = make_window(qtbot, presenter)
+
+    window.set_workspace_name(None)
+
+    assert window._workspace_label.text() == "Workspace"
+    assert "No workspace name" in window._workspace_label.toolTip()
 
 
 def test_profile_menu_stays_inside_dashboard(

@@ -78,7 +78,7 @@ def test_corrupt_screenshot_file_handling(tmp_path: Path) -> None:
                 external_user_id="ext",
                 email="a@example.com",
                 display_name="A",
-                team_name="T",
+                workspace_name="T",
             )
             s.flush()
             ws = SessionRepository(s).create(user_id=user.id, started_at=T0)
@@ -159,7 +159,7 @@ def test_cleanup_handles_missing_file_gracefully(tmp_path: Path) -> None:
                 external_user_id="ext",
                 email="a@example.com",
                 display_name="A",
-                team_name="T",
+                workspace_name="T",
             )
             s.flush()
             ws = SessionRepository(s).create(user_id=user.id, started_at=T0)

@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -83,6 +84,44 @@ class LocalConfig(BaseSettings):
     # production code paths.
     dummy_email: str = "employee@example.com"
     dummy_password: str = ""
+
+    # ── Backend API (mode: "api") ──────────────────────────────────────
+    # Base URL including the version prefix, e.g.
+    # ``http://127.0.0.1:8000/api/v1``. Only read in api mode; the dummy
+    # providers never touch the network.
+    api_base_url: str = ""
+
+    # Connect timeout is deliberately short: a background sync worker must
+    # not stall on an unreachable host. The read/write timeout is longer
+    # because a screenshot upload of several MB is a legitimate slow write.
+    api_connect_timeout_seconds: float = 5.0
+    api_timeout_seconds: float = 30.0
+
+    # Optional JSON overlay describing the backend's wire shape (paths, field
+    # lists, user-envelope keys). Empty means the built-in contract documented
+    # in docs/API_CONTRACT.md. A path that does not exist is a startup error,
+    # never a silent fallback — see load_contract().
+    api_contract_file: str = ""
+
+    @field_validator("api_base_url")
+    @classmethod
+    def _validate_api_base_url(cls, value: str) -> str:
+        value = value.strip().rstrip("/")
+        if not value:
+            return value
+        parsed = urlparse(value)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("api_base_url must start with http:// or https://")
+        if not parsed.netloc:
+            raise ValueError("api_base_url must include a host")
+        return value
+
+    @field_validator("api_connect_timeout_seconds", "api_timeout_seconds")
+    @classmethod
+    def _validate_timeouts(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("API timeouts must be greater than zero")
+        return value
 
     @field_validator("data_dir", mode="before")
     @classmethod
@@ -174,6 +213,10 @@ class AppSettings:
     @property
     def mode(self) -> RuntimeMode:
         return self.local.mode
+
+    @property
+    def api_base_url(self) -> str:
+        return self.local.api_base_url
 
     def subdir(self, relative: str) -> Path:
         """Resolve a per-user storage subdirectory (e.g. ``logs``)."""

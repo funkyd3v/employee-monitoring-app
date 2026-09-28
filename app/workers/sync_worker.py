@@ -4,6 +4,13 @@ Threading discipline (docs/ENGINEERING_RULES.md §Threading Discipline):
 * DB and provider I/O run off the Qt main thread.
 * UI updates flow only via Qt signals.
 * Uncaught exception is logged and the worker restarts with backoff.
+
+This tick is also where the app's two "the server can change this without a
+rebuild" features are read: the workspace label and the operator policy. Both
+are network reads, both already belong on a worker thread, and both fail soft —
+neither is allowed to disturb a queue drain. New server-driven settings would
+be added here, which is the whole scalability claim in one place: nothing in
+the UI, the services, or the domain learns that a new endpoint exists.
 """
 
 from __future__ import annotations
@@ -16,6 +23,7 @@ from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from app.core.logging import get_logger
 
 if TYPE_CHECKING:
+    from app.domain.auth.workspace import WorkspaceProvider
     from app.services.sync_service import SyncService
 
 _logger = get_logger("sync.worker")
@@ -30,12 +38,17 @@ class SyncWorker(QObject):
     failed = Signal(int)  # count failed this tick
     connectivity_changed = Signal(str)
     error_occurred = Signal(str)
+    #: Emitted only when the backend reports a *different* workspace name, so
+    #: the UI is not repainted once a poll cycle.
+    workspace_changed = Signal(str)
 
     def __init__(
         self,
         service: SyncService,
         *,
         poll_interval_ms: int = 30000,
+        workspace_provider: WorkspaceProvider | None = None,
+        policy_service: object | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -45,6 +58,9 @@ class SyncWorker(QObject):
         self._paused = False
         self._attempt = 0
         self._timer: QTimer | None = None
+        self._workspace_provider = workspace_provider
+        self._policy_service = policy_service
+        self._last_workspace: str | None = None
 
     @Slot()
     def start(self) -> None:
@@ -118,8 +134,45 @@ class SyncWorker(QObject):
             if skipped_offline:
                 # Offline/backoff skips are not errors — just debug
                 _logger.debug("sync tick skipped offline/backoff")
+
+            self._refresh_remote_settings(online=conn == "ONLINE")
         except Exception as exc:
             self._handle_failure(exc)
+
+    def _refresh_remote_settings(self, *, online: bool) -> None:
+        """Read the settings the server owns, after the drain.
+
+        Both reads are best-effort by contract: a failure leaves the last good
+        value in place and is logged at debug level, because neither a stale
+        workspace label nor a stale interval is worth a retry storm.
+
+        Skipped entirely when the backend is not reachable, so an offline
+        machine does not spend a request budget proving it.
+        """
+        if not online:
+            return
+
+        if self._policy_service is not None:
+            try:
+                self._policy_service.refresh()  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001 — never disturb a drain
+                _logger.debug("remote policy refresh failed", exc_info=True)
+
+        if self._workspace_provider is None:
+            return
+
+        try:
+            user = self._workspace_provider.fetch_workspace()
+        except Exception:  # noqa: BLE001 — never disturb a drain
+            _logger.debug("workspace refresh failed", exc_info=True)
+            return
+
+        if user is None or user.workspace_name == self._last_workspace:
+            return
+
+        self._last_workspace = user.workspace_name
+        _logger.info("workspace name updated from the backend")
+        self.workspace_changed.emit(user.workspace_name or "")
 
     def _handle_failure(self, exc: Exception) -> None:
         _logger.error("sync worker failure: %s", exc, exc_info=True)
@@ -146,24 +199,32 @@ class SyncWorkerSupervisor(QObject):
     failed = Signal(int)
     connectivity_changed = Signal(str)
     error_occurred = Signal(str)
+    workspace_changed = Signal(str)
 
     def __init__(
         self,
         service: SyncService,
         *,
         poll_interval_ms: int = 30000,
-        parent: QObject | None = None,
+        workspace_provider: WorkspaceProvider | None = None,
+        policy_service: object | None = None,
     ) -> None:
-        super().__init__(parent)
+        super().__init__()
         from PySide6.QtCore import QThread
 
         self._thread = QThread(self)
-        self._worker = SyncWorker(service, poll_interval_ms=poll_interval_ms)
+        self._worker = SyncWorker(
+            service,
+            poll_interval_ms=poll_interval_ms,
+            workspace_provider=workspace_provider,
+            policy_service=policy_service,
+        )
         self._worker.moveToThread(self._thread)
         self._worker.synced.connect(self.synced.emit)
         self._worker.failed.connect(self.failed.emit)
         self._worker.connectivity_changed.connect(self.connectivity_changed.emit)
         self._worker.error_occurred.connect(self.error_occurred.emit)
+        self._worker.workspace_changed.connect(self.workspace_changed.emit)
         self._thread.started.connect(self._worker.start)
         self._thread.finished.connect(self._worker.deleteLater)
 

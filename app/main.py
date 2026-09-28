@@ -396,9 +396,14 @@ def main(argv: list[str] | None = None) -> int:
         try:
             from app.workers.sync_worker import SyncWorkerSupervisor
 
+            # The tick also refreshes the two server-owned settings — the
+            # workspace label and the operator policy — so a new endpoint of
+            # that kind is wired here and nowhere else.
             supervisor = SyncWorkerSupervisor(
                 container.sync_service,
                 poll_interval_ms=container.settings.sync_poll_seconds * 1000,
+                workspace_provider=container.workspace_provider,
+                policy_service=container.policy_service,
             )
             sync_supervisor = supervisor
             supervisor.start()
@@ -558,6 +563,12 @@ def main(argv: list[str] | None = None) -> int:
 
     def _start_ui(_ctx: LifecycleContext) -> None:
         ui.start()
+        # The sync worker exists by now (it is started before the UI), so the
+        # dashboard can listen for the workspace name the backend reports.
+        _sup = _ctx.get("sync_supervisor")
+        if _sup is not None:
+            with contextlib.suppress(Exception):
+                ui.attach_sync_supervisor(_sup)
         # Wire power → workers/tray now that all lifecycle objects exist
         _wire_power_signals()
         _wire_activation_signals()

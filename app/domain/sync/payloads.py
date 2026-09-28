@@ -33,13 +33,13 @@ def build_user_payload(
     external_user_id: str | None,
     email: str,
     display_name: str | None,
-    team_name: str | None,
+    workspace_name: str | None,
 ) -> dict[str, Any]:
     return {
         "external_user_id": external_user_id,
         "email": email,
         "display_name": display_name,
-        "team_name": team_name,
+        "workspace_name": workspace_name,
     }
 
 

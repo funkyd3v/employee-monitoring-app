@@ -21,12 +21,20 @@
   graceful shutdown, logging, error recovery, packaging, installer.
 
 ### Explicitly out of scope (this phase)
-Backend API, backend database, cloud storage, server-side screenshot
-processing, real production authentication, admin web dashboard,
-team/employee management, cloud reporting/analytics, production upload
-implementation, billing, mobile apps, macOS/Linux support.
+Cloud storage, server-side screenshot processing, admin web dashboard,
+team/employee management, cloud reporting/analytics, billing, mobile apps,
+macOS/Linux support.
 
-The app must still expose clean interfaces so all of the above can be
+### Delivered since the client was written
+- **Reference backend** (`~/projects/empolee-monitoring-backend`): Sanctum
+  bearer auth, idempotent outbox upserts, screenshot upload with SHA-256
+  verification, and a small single-employee dashboard. It is a *sample*
+  implementation of `docs/API_CONTRACT.md`, not a production service.
+- **API mode** (`EM_MODE=api`): `ApiAuthProvider` + `ApiSyncProvider` replace
+  the local dummies. No service, repository, state machine or UI code
+  changed — the swap is still a single flag, which is the point.
+
+The app must still expose clean interfaces so the rest of the above can be
 added later without touching the core client.
 
 ## Layered architecture
@@ -61,17 +69,13 @@ SQLite repositories must not change as a result.
 ## Backend-readiness strategy
 
 ```
-AuthProvider
-    ├── LocalDummyAuthProvider   (today)
-    └── ApiAuthProvider          (future)
+AuthProvider          WorkspaceProvider        ConfigProvider
+    ├── LocalDummy          ├── Local              ├── LocalConfigProvider
+    └── ApiAuthProvider     └── ApiWorkspaceProvider└── ApiConfigProvider
 
 SyncProvider
-    ├── DummySyncProvider        (today)
-    └── ApiSyncProvider          (future)
-
-ConfigProvider
-    ├── LocalConfigStore         (today)
-    └── RemoteConfigProvider     (future)
+    ├── DummySyncProvider
+    └── ApiSyncProvider
 ```
 
 - The UI and domain layer never know which implementation is active — it
@@ -80,14 +84,43 @@ ConfigProvider
   metadata, and session events are defined now, matching what a realistic
   REST API would expect, so the eventual backend contract is "implement
   what the client already sends," not a renegotiation.
-- Illustrative future endpoints (owned by the backend team, not built now):
-  `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`,
-  `GET /me`, `GET /team`, `POST /work-sessions`, `PATCH /work-sessions/{id}`,
-  `POST /activities/batch`, `POST /screenshots`, `POST /sync/batch`,
-  `GET /agent/config`.
+- The wire format is pinned in `docs/API_CONTRACT.md`. Two decisions there
+  are load-bearing and must survive any future backend:
+  - the authenticated user always comes from the token, never the body (the
+    payload's `user_id` is a *local* row id and is ignored);
+  - one entity per request, because the outbox may only delete a local row
+    after an unambiguous confirmation.
 - Dependency inversion is enforced throughout:
   `ScreenshotService → ScreenshotRepository` (never SQLite directly),
   `SyncService → SyncProvider` interface (never HTTP directly).
+
+### The contract is data, not code
+
+The interface alone is not enough to make a backend pluggable. If every
+provider hardcodes its own paths and field lists, adding an endpoint still
+means editing provider code in four places — and the next release forgets one.
+
+So the surface itself is declared once, in
+`app/infrastructure/network/contract.py`: one `Endpoint` per operation, with
+its path template, method, and the exact wire fields it carries. The providers
+are then *generic drivers* — `ApiSyncProvider` contains no per-entity branch,
+`ApiAuthProvider` no hardcoded `/auth/login`.
+
+Two things follow, and both are tested:
+
+- **A new entity is a line of data.** `Entity.body_fields` also acts as a
+  filter, so a local bookkeeping column can never leak into a request.
+- **A different backend is a file.** `EM_API_CONTRACT_PATH` overlays paths,
+  field lists, multipart field names and user-envelope keys without touching
+  Python. A malformed overlay is a startup error, because the alternative is
+  an agent that looks configured and syncs to the wrong URLs.
+
+The same seam is what new features use. `workspace` and `agent/config` were
+integrated without editing a service, the UI or the domain: the sync tick
+(which is already a worker thread talking to the backend) reads them, and a
+Qt signal carries the one value the UI needs — so the threading rule holds
+too. A future endpoint costs a record in the contract plus, at most, one call
+in `SyncWorker._refresh_remote_settings`.
 
 ## Application lifecycle
 

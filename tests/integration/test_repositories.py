@@ -86,7 +86,7 @@ def _make_user(users: UserRepository, email: str = "a@example.com"):
         external_user_id="ext-1",
         email=email,
         display_name="Alice",
-        team_name="Engineering",
+        workspace_name="Engineering",
     )
 
 
@@ -104,7 +104,7 @@ class TestUserRepository:
         again = _make_user(users, email="a@example.com")
         session.commit()
         assert again.id == sid  # same row updated, not duplicated
-        assert again.team_name == "Engineering"
+        assert again.workspace_name == "Engineering"
 
     def test_get_by_email_and_id(self, session: Session, users: UserRepository) -> None:
         row = _make_user(users)

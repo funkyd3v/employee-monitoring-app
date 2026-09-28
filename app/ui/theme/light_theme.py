@@ -93,7 +93,7 @@ QLabel#TitleBarTitle {{
     font-weight: {FONT_WEIGHT_SEMIBOLD};
 }}
 
-QLabel#TeamNameLabel {{
+QLabel#WorkspaceNameLabel {{
     color: {p.text_secondary};
     font-size: {CAPTION_FONT_PX}px;
     font-weight: {FONT_WEIGHT_SEMIBOLD};

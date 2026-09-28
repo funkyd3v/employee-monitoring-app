@@ -21,7 +21,7 @@ class DashboardUser:
 
     display_name: str
     email: str
-    team_name: str | None = None
+    workspace_name: str | None = None
 
     @property
     def full_label(self) -> str:

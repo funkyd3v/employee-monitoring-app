@@ -104,5 +104,5 @@ def test_schema_version_matches_code(tmp_path: Path) -> None:
     migrate(engine)
     with sqlite3.connect(tmp_path / "v.db") as conn:
         versions = conn.execute("SELECT version FROM schema_migrations").fetchall()
-    assert [v[0] for v in versions] == [SCHEMA_VERSION]
+    assert [v[0] for v in versions] == list(range(1, SCHEMA_VERSION + 1))
     engine.dispose()

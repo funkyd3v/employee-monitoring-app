@@ -42,7 +42,7 @@ def _make_user_and_session(db: Database) -> int:
             external_user_id="ext-1",
             email="a@example.com",
             display_name="A",
-            team_name="T",
+            workspace_name="T",
         )
         s.flush()
         ws = sess_repo.create(user_id=user.id, started_at=T0)

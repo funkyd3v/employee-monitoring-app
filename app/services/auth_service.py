@@ -40,6 +40,7 @@ from app.infrastructure.database.repositories import UserRepository
 
 if TYPE_CHECKING:
     from app.domain.auth.auth import AuthenticatedUser, AuthProvider
+    from app.domain.auth.token_holder import AuthTokenHolder
     from app.infrastructure.database.models import User
 
 SessionFactory = Callable[[], Session]
@@ -56,6 +57,7 @@ class AuthService:
         session_factory: SessionFactory,
         machine: SessionMachine | None = None,
         clock: Clock = SYSTEM_CLOCK,
+        token_holder: AuthTokenHolder | None = None,
     ) -> None:
         self._provider = auth_provider
         self._store = credential_store
@@ -63,9 +65,23 @@ class AuthService:
         self._machine = machine or SessionMachine()
         self._clock = clock
         self._logger = get_logger("auth")
+        # Optional in-memory mirror of the live token. Present in api mode so
+        # the sync provider can authenticate its requests without the sync
+        # layer ever learning about auth; absent in local mode, where there is
+        # no backend to talk to.
+        self._token_holder = token_holder
         self._token: str | None = None
         self._current_user: AuthenticatedUser | None = None
         self._current_user_id: int | None = None
+
+    def _publish_token(self, token: str | None) -> None:
+        """Mirror the live token to the holder that non-auth components read."""
+        if self._token_holder is None:
+            return
+        if token is None:
+            self._token_holder.clear()
+        else:
+            self._token_holder.set(token)
 
     @property
     def state(self) -> AppState:
@@ -117,6 +133,7 @@ class AuthService:
         self._token = token
         self._current_user = user
         self._current_user_id = row.id
+        self._publish_token(token)
         self._machine.apply(SessionAction.LOGIN, at=self._clock.utc())
         self._logger.info("user authenticated (email=%s)", user.email)
         return user
@@ -148,6 +165,7 @@ class AuthService:
         self._token = None
         self._current_user = None
         self._current_user_id = None
+        self._publish_token(None)
         self._logger.info("user logged out")
 
     def restore(self) -> AuthenticatedUser | None:
@@ -178,6 +196,7 @@ class AuthService:
         self._token = token
         self._current_user = session.user
         self._current_user_id = row.id
+        self._publish_token(token)
         self._machine.apply(SessionAction.LOGIN, at=self._clock.utc())
         self._logger.info("authentication restored (email=%s)", session.user.email)
         return session.user
@@ -187,6 +206,7 @@ class AuthService:
         if self._token is not None:
             discard_secret(self._token)
             self._token = None
+        self._publish_token(None)
 
     def _upsert_user(self, user: AuthenticatedUser) -> User:
         with self._session_factory() as session:
@@ -194,7 +214,7 @@ class AuthService:
                 external_user_id=user.external_user_id,
                 email=user.email,
                 display_name=user.display_name,
-                team_name=user.team_name,
+                workspace_name=user.workspace_name,
             )
             session.commit()
             return row

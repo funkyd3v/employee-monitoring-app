@@ -193,10 +193,14 @@ class DashboardWindow(FramelessWindow):
 
     # ── Construction ───────────────────────────────────────────────────────
     def _build_shell(self) -> None:
-        self._team_label = QLabel("Workspace")
-        self._team_label.setObjectName("TeamNameLabel")
-        self._team_label.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.title_bar.add_trailing(self._team_label)
+        # The workspace name, as the backend currently reports it (title bar,
+        # right of centre). It changes independently of the session — the
+        # employee renames it from the dashboard — so it is refreshed from the
+        # workspace provider rather than being frozen at login.
+        self._workspace_label = QLabel("Workspace")
+        self._workspace_label.setObjectName("WorkspaceNameLabel")
+        self._workspace_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.title_bar.add_trailing(self._workspace_label)
 
         self._profile_trigger = _ProfileTrigger()
         self._profile_trigger.clicked.connect(self._open_profile_menu)
@@ -386,11 +390,26 @@ class DashboardWindow(FramelessWindow):
     # ── Public API (controller-driven) ─────────────────────────────────────
     def set_user(self, user: DashboardUser) -> None:
         self._user = user
-        self._team_label.setText(user.team_name or "Workspace")
-        self._team_label.setToolTip(user.team_name or "No team assigned")
+        self._set_workspace_name(user.workspace_name)
         self._profile_trigger.set_user(user)
         self._greeting.setText(
             f"{greeting_for(datetime.now().hour)}, {user.first_name}"
+        )
+
+    def set_workspace_name(self, workspace_name: str | None) -> None:
+        """Update just the workspace label, leaving the rest of the header be.
+
+        Called when the backend reports a renamed workspace. Keeping it
+        separate from :meth:`set_user` means a poll does not have to rebuild
+        the greeting or the avatar for a one-word change.
+        """
+        self._set_workspace_name(workspace_name)
+
+    def _set_workspace_name(self, workspace_name: str | None) -> None:
+        label = (workspace_name or "").strip()
+        self._workspace_label.setText(label or "Workspace")
+        self._workspace_label.setToolTip(
+            label or "No workspace name set — add one from the dashboard"
         )
 
     def request_check_out(self) -> None:

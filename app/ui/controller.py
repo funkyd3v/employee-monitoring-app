@@ -94,6 +94,7 @@ class UiController(QObject):
         self._logger = get_logger("ui.controller")
         self._thread: QThread | None = None
         self._worker: _LoginWorker | None = None
+        self._sync_supervisor: object | None = None
 
         self.login = LoginWindow()
         self.dashboard = DashboardWindow(self._sessions)
@@ -118,6 +119,24 @@ class UiController(QObject):
         self.tray.check_out.connect(self._tray_check_out)
         self.tray.logout.connect(self._tray_logout)
         self.tray.exit_requested.connect(self._exit)
+
+    def attach_sync_supervisor(self, supervisor: object) -> None:
+        """Listen for server-driven updates from the sync worker.
+
+        Called once the sync worker exists (it is created after the UI), so
+        the workspace label the employee renames from the dashboard appears
+        here within a sync cycle. The connection is the *only* thing this UI
+        knows about the backend: it reacts to a signal, never to HTTP.
+        """
+        signal = getattr(supervisor, "workspace_changed", None)
+        if signal is None:
+            return
+        signal.connect(self._on_workspace_changed)
+        self._sync_supervisor = supervisor
+
+    @Slot(str)
+    def _on_workspace_changed(self, workspace_name: str) -> None:
+        self.dashboard.set_workspace_name(workspace_name)
 
     def start(self) -> None:
         """Boot the UI: a restored session shows the dashboard, else login."""
@@ -159,7 +178,7 @@ class UiController(QObject):
             DashboardUser(
                 display_name=user.display_name or user.email,
                 email=user.email,
-                team_name=user.team_name,
+                workspace_name=user.workspace_name,
             )
         )
         view = self._sessions.tick()

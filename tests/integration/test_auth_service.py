@@ -58,7 +58,7 @@ def make_service(
     store = store or EphemeralCredentialStore()
     provider = provider or LocalDummyAuthProvider(
         DummyAuthConfig(
-            email=EMAIL, password=PASSWORD, display_name="Jane", team_name="Eng"
+            email=EMAIL, password=PASSWORD, display_name="Jane", workspace_name="Eng"
         )
     )
     return AuthService(

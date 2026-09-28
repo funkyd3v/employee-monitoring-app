@@ -2,7 +2,7 @@
 
 | Table | Key Columns | Purpose |
 |---|---|---|
-| `users` | `id, external_user_id, email, display_name, team_name, created_at, updated_at` | Local cache of authenticated user (no password stored) |
+| `users` | `id, external_user_id, email, display_name, workspace_name, created_at, updated_at` | Local cache of authenticated user (no password stored) |
 | `work_sessions` | `id, user_id, started_at, ended_at, status, total_work_seconds, created_at, updated_at` | One row per Check-In → Check-Out cycle |
 | `breaks` | `id, session_id, started_at, ended_at, duration_seconds, created_at` | Break intervals within a session |
 | `activity_periods` | `id, session_id, started_at, ended_at, state (ACTIVE/IDLE), duration_seconds, created_at` | Timeline reconstruction |
