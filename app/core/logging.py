@@ -235,10 +235,13 @@ def install_global_handlers() -> None:
 
 
 def log_startup_banner(settings: object | None = None) -> None:
-    """Emit a single structured banner at startup (version, mode, data dir).
+    """Emit a single structured banner at startup (version, mode, target).
 
     Helpful for post-crash diagnostics: the log always opens with an
-    identifiable header even when the app later crashes early.
+    identifiable header even when the app later crashes early. In api mode the
+    resolved base URL is included, because "which server did this build
+    actually talk to" is the first question when a login fails and the log is
+    the only place that can answer it.
     """
     try:
         from app.config.constants import APP_VERSION
@@ -258,10 +261,17 @@ def log_startup_banner(settings: object | None = None) -> None:
             mode = settings.mode
         if data_dir is None and settings is not None and hasattr(settings, "data_dir"):
             data_dir = settings.data_dir
+        mode = mode or "local"
+        target = (
+            f" api={getattr(settings, 'api_base_url', '') or '-'}"
+            if mode == "api"
+            else ""
+        )
         logger.info(
-            "=== Employee Monitoring Agent v%s starting (mode=%s data_dir=%s) ===",
+            "=== Employee Monitoring Agent v%s starting (mode=%s%s data_dir=%s) ===",
             APP_VERSION,
-            mode or "local",
+            mode,
+            target,
             data_dir or "?",
         )
     except Exception:  # noqa: S110

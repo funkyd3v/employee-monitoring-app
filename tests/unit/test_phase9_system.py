@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import sys
 import threading
@@ -179,3 +180,67 @@ def test_log_startup_banner_does_not_raise(tmp_path: Path) -> None:
         data_dir = tmp_path
 
     log_startup_banner(_FakeSettings())
+
+
+class TestStartupBannerNamesTheBackend:
+    """In api mode the log must say which server this build resolved.
+
+    "Which backend did it actually talk to" is the first question when a login
+    fails, and a build that silently fell back to local gives no clue at all.
+    """
+
+    @staticmethod
+    def _banner(settings: object, caplog) -> str:
+        from app.core.logging import log_startup_banner
+
+        with caplog.at_level(logging.INFO, logger="employee_monitoring_agent"):
+            log_startup_banner(settings)
+        return "\n".join(r.getMessage() for r in caplog.records)
+
+    def test_api_mode_includes_the_base_url(self, tmp_path: Path, caplog) -> None:
+        class _FakeLocal:
+            mode = "api"
+            data_dir = tmp_path
+
+        class _FakeSettings:
+            local = _FakeLocal()
+            mode = "api"
+            data_dir = tmp_path
+            api_base_url = "https://prod.test/api/v1"
+
+        message = self._banner(_FakeSettings(), caplog)
+
+        assert "mode=api" in message
+        assert "https://prod.test/api/v1" in message
+
+    def test_api_mode_with_no_base_url_is_marked(self, tmp_path: Path, caplog) -> None:
+        class _FakeLocal:
+            mode = "api"
+            data_dir = tmp_path
+
+        class _FakeSettings:
+            local = _FakeLocal()
+            mode = "api"
+            data_dir = tmp_path
+            api_base_url = ""
+
+        message = self._banner(_FakeSettings(), caplog)
+
+        assert "mode=api" in message
+        assert "api=-" in message
+
+    def test_local_mode_carries_no_api_target(self, tmp_path: Path, caplog) -> None:
+        class _FakeLocal:
+            mode = "local"
+            data_dir = tmp_path
+
+        class _FakeSettings:
+            local = _FakeLocal()
+            mode = "local"
+            data_dir = tmp_path
+            api_base_url = "https://prod.test/api/v1"
+
+        message = self._banner(_FakeSettings(), caplog)
+
+        assert "mode=local" in message
+        assert "prod.test" not in message
