@@ -94,6 +94,112 @@ def test_clear_error_hides_submit_error(qtbot: QtBot) -> None:
     assert not window._submit_error.isVisible()
 
 
+class TestConnectionCaption:
+    """The login screen must name the backend it is actually signing in to.
+
+    It used to claim "offline-first" unconditionally, which is true of storage
+    and false of the auth flow: a build that never found its ``.env`` runs the
+    local dummy provider and refuses every real account while the screen still
+    says no server is involved.
+    """
+
+    def test_api_mode_names_the_base_url(self) -> None:
+        from types import SimpleNamespace
+
+        from app.ui.controller import _connection_caption
+
+        caption = _connection_caption(
+            SimpleNamespace(mode="api", api_base_url="http://127.0.0.1:8000/api/v1")
+        )
+
+        assert "127.0.0.1:8000" in caption
+        assert "offline" not in caption.lower()
+
+    def test_api_mode_without_a_base_url_calls_it_out(self) -> None:
+        from types import SimpleNamespace
+
+        from app.ui.controller import _connection_caption
+
+        caption = _connection_caption(SimpleNamespace(mode="api", api_base_url=""))
+
+        assert "EM_API_BASE_URL" in caption
+
+    def test_local_mode_keeps_the_offline_first_wording(self) -> None:
+        from types import SimpleNamespace
+
+        from app.ui.controller import _connection_caption
+
+        caption = _connection_caption(
+            SimpleNamespace(mode="local", api_base_url="http://127.0.0.1:8000")
+        )
+
+        assert "offline-first" in caption.lower()
+
+    def test_controller_applies_the_caption_to_the_window(self, qtbot) -> None:
+        from types import SimpleNamespace
+
+        from app.ui.controller import _connection_caption
+
+        window = make_window(qtbot)
+        window.set_connection_status(
+            _connection_caption(
+                SimpleNamespace(mode="api", api_base_url="http://backend.test/api/v1")
+            )
+        )
+
+        assert "backend.test" in window._connection_status.text()
+        # The tooltip must not keep contradicting the caption.
+        assert "offline-first" not in window._connection_status.toolTip().lower()
+
+
+class TestLoginWorkerNeverGoesSilent:
+    """A failure the auth stack did not classify must still reach the employee.
+
+    Letting it escape stranded the spinner with no message and no log line,
+    which is indistinguishable from a hang.
+    """
+
+    def test_unclassified_error_is_reported_and_logged(self, caplog) -> None:
+        import logging
+
+        from app.core.exceptions import AppError
+        from app.ui.controller import _LoginWorker
+
+        class BoomError(AppError):
+            pass
+
+        class ExplodingAuth:
+            def login(self, email: str, password: str) -> object:
+                raise BoomError("kaboom")
+
+        worker = _LoginWorker(ExplodingAuth(), "a@b.com", "pw")  # type: ignore[arg-type]
+        failures: list[object] = []
+        worker.failed.connect(failures.append)
+
+        with caplog.at_level(logging.WARNING, logger="employee_monitoring_agent"):
+            worker.run()
+
+        assert len(failures) == 1
+        assert isinstance(failures[0], BoomError)
+        assert any("unclassified" in r.getMessage() for r in caplog.records)
+
+    def test_typed_auth_error_is_reported(self) -> None:
+        from app.core.exceptions import InvalidCredentialsError
+        from app.ui.controller import _LoginWorker
+
+        class RefusingAuth:
+            def login(self, email: str, password: str) -> object:
+                raise InvalidCredentialsError("nope")
+
+        worker = _LoginWorker(RefusingAuth(), "a@b.com", "pw")  # type: ignore[arg-type]
+        failures: list[object] = []
+        worker.failed.connect(failures.append)
+
+        worker.run()
+
+        assert len(failures) == 1
+
+
 class TestFriendlyAuthMessage:
     """The message must name the actual cause.
 

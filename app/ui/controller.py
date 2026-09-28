@@ -41,6 +41,26 @@ if TYPE_CHECKING:
 _ACTIVE_STATES: frozenset[AppState] = frozenset({AppState.WORKING, AppState.BREAK})
 
 
+def _connection_caption(settings: object) -> str:
+    """Say which backend this build actually talks to.
+
+    The login screen used to advertise "offline-first" unconditionally, which
+    is a true statement about the *storage* and a false one about the *auth
+    flow*: a build that never found its ``.env`` runs the local dummy provider
+    and rejects every real account, while the screen still claims no server is
+    involved. Naming the resolved target turns "my password must be wrong" into
+    a one-glance answer.
+    """
+    mode = getattr(settings, "mode", "local")
+    if mode != "api":
+        return "Offline-first — data stays on this device"
+
+    base_url = str(getattr(settings, "api_base_url", "") or "").strip()
+    if not base_url:
+        return "No monitoring server configured — check EM_API_BASE_URL"
+    return f"Signing in to {base_url}"
+
+
 class _LoginWorker(QObject):
     """Runs a single auth login off the Qt thread; emits its outcome."""
 
@@ -60,14 +80,26 @@ class _LoginWorker(QObject):
         self._auth = auth
         self._email = email
         self._password = password
+        self._logger = get_logger("ui.controller")
 
     @Slot()
     def run(self) -> None:
         try:
             user = self._auth.login(email=self._email, password=self._password)
         except AuthenticationError as exc:
+            self._logger.warning("login rejected: %s", exc)
+            self.failed.emit(exc)
+        except Exception as exc:
+            # Anything the auth stack did not classify — a protocol error from
+            # a base URL that resolves to a proxy or captive portal, a
+            # database failure writing the user cache — must still reach the
+            # employee. Letting it escape would strand the spinner with no
+            # message and no log line, which is indistinguishable from the app
+            # having hung.
+            self._logger.exception("login failed with an unclassified error")
             self.failed.emit(exc)
         else:
+            self._logger.info("login attempt completed")
             self.succeeded.emit(user)
         finally:
             # Always announced, so the owner can retire the thread even when
@@ -101,6 +133,10 @@ class UiController(QObject):
         self._sync_supervisor: object | None = None
 
         self.login = LoginWindow()
+        # Name the resolved auth target up front, so a build that is pointed at
+        # the wrong place (or at no backend at all) says so before the employee
+        # types a password that was never going to be checked.
+        self.login.set_connection_status(_connection_caption(container.settings))
         self.dashboard = DashboardWindow(self._sessions)
         self.tray = TrayManager()
         # Activity live refresh — keeps pill/breakdown in sync between session actions.

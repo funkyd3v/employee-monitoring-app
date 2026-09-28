@@ -162,7 +162,15 @@ class LoginWindow(FramelessWindow):
         self._password.clear_error()
 
     def set_connection_status(self, text: str) -> None:
+        """Name the backend this build signs in against.
+
+        The controller supplies the text because it — not the window — knows
+        which provider the container wired. The tooltip is replaced with it:
+        leaving the offline-first explanation in place while the caption names
+        a server would just be a second, contradictory thing to read.
+        """
         self._connection_status.setText(text)
+        self._connection_status.setToolTip(text)
 
     def reset_form(self) -> None:
         self._email.clear()
