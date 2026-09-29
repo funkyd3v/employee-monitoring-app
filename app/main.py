@@ -407,6 +407,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             sync_supervisor = supervisor
             supervisor.start()
+            # A user action is the one event an observer cannot afford to wait
+            # out a poll interval for, so each committed check-in, break,
+            # resume and check-out nudges the worker. `request_sync` hands the
+            # work to the worker thread over a queued connection, so this
+            # returns immediately and the 30s timer stays the retry path.
+            container.session_service.set_sync_notifier(supervisor.request_sync)
             lifecycle.context.set("sync_supervisor", supervisor)
             logger.info("Sync worker started")
         except Exception as exc:

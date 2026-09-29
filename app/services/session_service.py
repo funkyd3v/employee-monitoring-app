@@ -75,16 +75,41 @@ class SessionService:
         machine: SessionMachine | None = None,
         clock: Clock = SYSTEM_CLOCK,
         session_factory: SessionFactory | None = None,
+        on_sync_requested: Callable[[], None] | None = None,
     ) -> None:
         self._machine = machine or SessionMachine()
         self._clock = clock
         self._user_id: int | None = None
         self._session_factory: SessionFactory | None = session_factory
         self._logger = get_logger("session")
+        self._on_sync_requested = on_sync_requested
         # Back-compat: some callers still pass repo directly (tests)
         self._session_repository: SessionRepository | None = None
         self._activity_service: Any | None = None
         self._screenshot_service: Any | None = None
+
+    def set_sync_notifier(self, notifier: Callable[[], None] | None) -> None:
+        """Bind a callback fired once a user action has been committed locally.
+
+        The offline queue is durable and the poll timer already retries
+        failures, so this is only a nudge to drain sooner — the four buttons
+        an observer actually cares about (check in, break, resume, check out)
+        reach the server without waiting out ``sync_poll_seconds``. It is a
+        bound method, not a Qt signal, so nothing here depends on Qt and the
+        wiring stays in :mod:`app.main`.
+        """
+        self._on_sync_requested = notifier
+
+    def _request_sync(self) -> None:
+        """Nudge the sync worker. Never raises into the caller's action."""
+        if self._on_sync_requested is None:
+            return
+        try:
+            self._on_sync_requested()
+        except Exception as exc:
+            # A failed nudge costs latency, never the user's action: the poll
+            # timer still drains the queue on its own schedule.
+            self._logger.warning("sync request nudge failed: %s", exc, exc_info=True)
 
     # Back-compat shim for old wiring (container used repo+factory). Keep it
     # so existing tests don't break if they call set_persistence(repo,factory).
@@ -202,6 +227,7 @@ class SessionService:
                 # sync ORM id back to domain
                 session.id = row.id
                 self._logger.info("check-in id=%s user=%s", row.id, row.user_id)
+                self._request_sync()
         except Exception as exc:
             self._logger.error("failed to persist check-in: %s", exc, exc_info=True)
 
@@ -248,6 +274,7 @@ class SessionService:
                 except Exception:
                     self._logger.debug("break id sync skipped", exc_info=True)
                 self._logger.info("persisted take_break id=%s at=%s", session.id, at)
+                self._request_sync()
         except Exception as exc:
             self._logger.error("failed to persist take_break: %s", exc, exc_info=True)
 
@@ -286,6 +313,7 @@ class SessionService:
                 )
                 db.commit()
                 self._logger.info("persisted resume id=%s at=%s", session.id, at)
+                self._request_sync()
         except Exception as exc:
             self._logger.error("failed to persist resume: %s", exc, exc_info=True)
 
@@ -328,6 +356,7 @@ class SessionService:
                 self._logger.info(
                     "persisted checkout session_id=%s total=%s", session.id, total
                 )
+                self._request_sync()
         except Exception as exc:
             self._logger.error("failed to persist checkout: %s", exc, exc_info=True)
 

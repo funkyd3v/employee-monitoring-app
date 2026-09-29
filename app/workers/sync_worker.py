@@ -30,6 +30,10 @@ _logger = get_logger("sync.worker")
 
 _RETRY_BACKOFF_SECONDS: tuple[int, ...] = (0, 30, 120, 300, 900)
 
+#: How long an event-driven request waits before draining, so that the rows a
+#: single user action commits coalesce into one round of requests.
+_REQUEST_DEBOUNCE_MS = 300
+
 
 class SyncWorker(QObject):
     """QObject that drains the sync queue from a worker thread."""
@@ -49,6 +53,7 @@ class SyncWorker(QObject):
         poll_interval_ms: int = 30000,
         workspace_provider: WorkspaceProvider | None = None,
         policy_service: object | None = None,
+        debounce_ms: int = _REQUEST_DEBOUNCE_MS,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
@@ -61,6 +66,19 @@ class SyncWorker(QObject):
         self._workspace_provider = workspace_provider
         self._policy_service = policy_service
         self._last_workspace: str | None = None
+        # A single action enqueues several rows (a check-in writes the work
+        # session, a resume closes a break *and* updates the session), and
+        # those commits land within microseconds of each other. Restarting one
+        # single-shot timer collapses the burst into a single drain.
+        self._debounce_ms = debounce_ms
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.timeout.connect(self._tick)
+        # A drain is synchronous network I/O, so a second one must not start
+        # underneath it. `SyncService` holds no lock of its own; serialising
+        # here is what keeps two drains off the same pending rows.
+        self._draining = False
+        self._pending_tick = False
 
     @Slot()
     def start(self) -> None:
@@ -88,6 +106,8 @@ class SyncWorker(QObject):
         if self._timer is not None:
             self._timer.stop()
             self._timer = None
+        self._debounce.stop()
+        self._pending_tick = False
         _logger.info("sync worker stopped")
 
     @Slot()
@@ -111,9 +131,34 @@ class SyncWorker(QObject):
         QTimer.singleShot(200, self._tick)
 
     @Slot()
+    def request_sync(self) -> None:
+        """Drain now because something was just written locally.
+
+        Called from the GUI thread via a queued connection, so it lands on the
+        worker thread and is ordered against the poll timer — this never runs
+        network I/O on the caller's thread. The poll timer is left running: it
+        remains the retry and backoff path for rows this drain fails on.
+        """
+        if not self._running or self._paused:
+            return
+        if self._draining:
+            # A drain is in flight and this request arrived after it read the
+            # queue, so it would otherwise wait a whole poll interval. Re-arm
+            # when the current drain finishes rather than stacking a second one.
+            self._pending_tick = True
+            _logger.debug("sync requested during drain; will re-arm")
+            return
+        self._debounce.start(self._debounce_ms)
+
+    @Slot()
     def _tick(self) -> None:
         if not self._running or self._paused:
             return
+        if self._draining:
+            self._pending_tick = True
+            return
+
+        self._draining = True
         try:
             result = self._service.sync_once()
             synced = int(result.get("synced", 0))
@@ -138,6 +183,11 @@ class SyncWorker(QObject):
             self._refresh_remote_settings(online=conn == "ONLINE")
         except Exception as exc:
             self._handle_failure(exc)
+        finally:
+            self._draining = False
+            if self._pending_tick and self._running and not self._paused:
+                self._pending_tick = False
+                self._debounce.start(self._debounce_ms)
 
     def _refresh_remote_settings(self, *, online: bool) -> None:
         """Read the settings the server owns, after the drain.
@@ -255,6 +305,21 @@ class SyncWorkerSupervisor(QObject):
 
         QMetaObject.invokeMethod(
             self._worker, "resume", Qt.ConnectionType.QueuedConnection
+        )
+
+    def request_sync(self) -> None:
+        """Ask for a drain without waiting for the next poll.
+
+        Safe to call from the GUI thread: the queued connection hands the work
+        to the worker thread and returns immediately, so the caller never
+        blocks on the network.
+        """
+        if not self._thread.isRunning():
+            return
+        from PySide6.QtCore import QMetaObject, Qt
+
+        QMetaObject.invokeMethod(
+            self._worker, "request_sync", Qt.ConnectionType.QueuedConnection
         )
 
     @property
