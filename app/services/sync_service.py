@@ -22,6 +22,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable
 from datetime import datetime  # noqa: TC003
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.core.clock import SYSTEM_CLOCK, Clock
@@ -409,6 +410,9 @@ class SyncService:
                             db2.commit()
                             synced += 1
                             _logger.info("screenshot synced id=%s", shot.id)
+                            # Only now, with the server's confirmation already
+                            # committed, is the local copy redundant.
+                            self._discard_local_file(shot.file_path)
                         else:
                             if result.retryable:
                                 s_repo2.mark_failed(shot.id)
@@ -439,6 +443,35 @@ class SyncService:
         return {"synced": synced, "failed": failed, "skipped_backoff": skipped_backoff}
 
     # ── Helpers ─────────────────────────────────────────────────────────
+
+    def _discard_local_file(self, file_path: str) -> bool:
+        """Drop the local JPEG once the server has confirmed it holds the bytes.
+
+        The metadata row deliberately stays behind. It is the only local
+        record that a screenshot was ever captured, and it is what the backend
+        row was derived from, so ``file_path`` is left pointing at a file that
+        no longer exists and has to be read as history rather than as a handle.
+        Keeping the row is also what stops this row being re-uploaded:
+        ``pending_with_failed_batch`` only selects PENDING and FAILED.
+
+        At the default 60s capture interval and a 7-day retention that is
+        ~10,000 images on the employee's machine, on a volume whose free space
+        is warned about but never reclaimed.
+
+        Never raises. The bytes are already confirmed on the server, so a failed
+        unlink costs disk, not data, and ``CleanupService`` still sweeps
+        anything left behind. Windows in particular refuses to unlink a file
+        that is still held open, which is not worth failing a sync over.
+        """
+        path = Path(file_path)
+        try:
+            if path.is_file():
+                path.unlink()
+                _logger.info("removed local screenshot %s", path.name)
+                return True
+        except OSError as exc:
+            _logger.warning("could not remove local screenshot %s: %s", path.name, exc)
+        return False
 
     def _is_due(self, item: SyncQueueItem, at: datetime) -> bool:
         """Backoff check: skip if ``now < last_attempt + backoff(attempt)``."""

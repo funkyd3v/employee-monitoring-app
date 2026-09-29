@@ -34,7 +34,7 @@ from app.domain.screenshots.processing import (
     encode_jpeg,
     validate_image,
 )
-from app.domain.sync.sync import SyncEntityType, SyncOperation
+from app.domain.sync.sync import SyncEntityType, SyncOperation, SyncStatus
 from app.infrastructure.database.repositories import (
     ScreenshotRepository,
     SyncQueueRepository,
@@ -310,12 +310,17 @@ class ScreenshotService:
                                 "corrupt screenshot file detected %s", p.name
                             )
 
-                # Orphan records: DB row but file missing → mark failed (or remove)
+                # Orphan records: a row whose file is gone AND that the server
+                # never confirmed. A SYNCED row is *expected* to be file-less —
+                # the drain removes the JPEG as soon as the backend confirms it,
+                # and keeps the row as the local record of what was captured —
+                # so it is skipped here rather than logged as an orphan on
+                # every launch.
                 for row in rows:
+                    if row.sync_status == SyncStatus.SYNCED.value:
+                        continue
                     fp = Path(row.file_path)
                     if not fp.exists():
-                        # Do not delete row outright — mark FAILED so retry/cleanup can see
-                        # But if never synced and file never existed, it's safer to remove
                         try:
                             from sqlalchemy import delete as sa_delete
 
